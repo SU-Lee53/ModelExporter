@@ -15,7 +15,6 @@ WinCore::WinCore(HINSTANCE hInstance, DWORD dwWidth, DWORD dwHeight, BOOL bEnabl
     sm_hInstance = hInstance;
     sm_dwClientWidth = dwWidth;
     sm_dwClientHeight = dwHeight;
-    m_wstrGameName = L"GAME NAME HERE";
 
     MyRegisterClass();
 

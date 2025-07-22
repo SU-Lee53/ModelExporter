@@ -13,6 +13,7 @@ GameFramework::GameFramework(BOOL bEnableDebugLayer, BOOL bEnableGBV)
 	g_pGuiHandler->Initialize(m_pD3DCore->GetDevice());
 
 	m_pImporter = std::make_unique<AssimpImporter>();
+	m_pImporter->LoadModelFromPath("../../Models/Sporty Granny.fbx");
 }
 
 void GameFramework::Update()

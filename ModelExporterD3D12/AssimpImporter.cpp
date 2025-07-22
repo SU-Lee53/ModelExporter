@@ -36,6 +36,8 @@ bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
 		return false;
 	}
 
+	m_bLoaded = true;
+	m_strPath = svPath;
 	m_rpRootNode = m_rpScene->mRootNode;
 
 	return true;
@@ -45,19 +47,23 @@ void AssimpImporter::Run()
 {
 	ImGui::Begin("AssimpImporter");
 
-	if (not m_bLoaded) {
-		ImGui::InputText("Model Path", &m_strPath);
-		ImGui::Text("%s - Length : %d", m_strPath.c_str(), m_strPath.length());
-		if (ImGui::Button("Load")) {
-			m_bLoaded = LoadModelFromPath(m_strPath);
-		}
+	static std::string s;
+	ImGui::InputText("Model Path", &s);
+	ImGui::Text("%s - Length : %d", s.c_str(), s.length());
+	if (ImGui::Button("Load")) {
+		LoadModelFromPath(s);
 	}
 
 	ImGui::Text("%s", m_bLoaded ? "Model Loaded" : "Model not yet Loaded");
+	if (m_bLoaded) {
+		ImGui::Text("Loaded Model Path : %s", m_strPath.c_str());
+	}
+
+	ImGui::NewLine();
 
 	if(ImGui::BeginTabBar("")){
 		if (ImGui::BeginTabItem("Scene Info")) {
-
+			ShowSceneAttribute();
 			ImGui::EndTabItem();
 		}
 		
@@ -77,92 +83,193 @@ void AssimpImporter::Run()
 
 void AssimpImporter::ShowSceneAttribute()
 {
-	std::println("Scene Name : {}", m_rpScene->mName.C_Str());
-	std::println("Has Animations? : {}", m_rpScene->HasAnimations());
-	if (m_rpScene->HasAnimations()) {
-		for (int i = 0; i < m_rpScene->mNumAnimations; ++i) {
-			std::println("\tAnim Name : {}", m_rpScene->mAnimations[i]->mName.C_Str());
-			std::println("\tAnim Duration : {}", m_rpScene->mAnimations[i]->mDuration);
-			std::println("\tAnim TicksPerSecond : {}", m_rpScene->mAnimations[i]->mTicksPerSecond);
-		}
-	}
-
-	std::println("Has Cameras? : {}", m_rpScene->HasCameras());
-	if (m_rpScene->HasCameras()) {
-		for (int i = 0; i < m_rpScene->mNumCameras; ++i) {
-			std::println("\tCamera Name : {}", m_rpScene->mCameras[i]->mName.C_Str());
-		}
-	}
-
-	std::println("Has Lights? : {}", m_rpScene->HasLights());
-	if (m_rpScene->HasLights()) {
-		for (int i = 0; i < m_rpScene->mNumLights; ++i) {
-			std::println("\tLight Name : {}", m_rpScene->mLights[i]->mName.C_Str());
-		}
-	}
-
-	std::println("Has Materials? : {}", m_rpScene->HasMaterials());
-	if (m_rpScene->HasMaterials()) {
-		for (int i = 0; i < m_rpScene->mNumMaterials; ++i) {
-			aiMaterial* material = m_rpScene->mMaterials[i];
-			std::println("\tMaterial Name : {}", material->GetName().C_Str());
-			std::println("\tNumAllocated : {}", material->mNumAllocated);
-			std::println("\tNumProperties : {}", material->mNumProperties);
-			for (int j = 0; j < material->mNumProperties; ++j) {
-				aiMaterialProperty* materialProperty = material->mProperties[j];
-				std::println("\t\tProperty Key #{} : {}", j, materialProperty->mKey.C_Str());
+	ImGui::Text("Scene Name : %s", m_rpScene->mName.C_Str());
+	if (ImGui::TreeNode("Anim", "Has Animations ? : % s", m_rpScene->HasAnimations() ? "YES" : "NO")) {
+		if (m_rpScene->HasAnimations()) {
+			for (int i = 0; i < m_rpScene->mNumAnimations; ++i) {
+				ImGui::Text("Anim Name : %s", m_rpScene->mAnimations[i]->mName.C_Str());
+				ImGui::Text("Anim Duration : %f", m_rpScene->mAnimations[i]->mDuration);
+				ImGui::Text("Anim TicksPerSecond : %f", m_rpScene->mAnimations[i]->mTicksPerSecond);
+				ImGui::Separator();
 			}
-			std::println();
 		}
+		ImGui::TreePop();
 	}
 
-	std::println("Has Meshes? : {}", m_rpScene->HasMeshes());
-	if (m_rpScene->HasMeshes()) {
-		for (int i = 0; i < m_rpScene->mNumMeshes; ++i) {
-			aiMesh* mesh = m_rpScene->mMeshes[i];
+	if (ImGui::TreeNode("Cam", "Has Cameras? : %s", m_rpScene->HasCameras() ? "YES" : "NO")) {
+		if (m_rpScene->HasCameras()) {
+			for (int i = 0; i < m_rpScene->mNumCameras; ++i) {
+				ImGui::Text("Camera Name : %s", m_rpScene->mCameras[i]->mName.C_Str());
+				ImGui::Separator();
+			}
+		}
+		ImGui::TreePop();
+	}
 
-			std::println("\tMesh Name : {}", mesh->mName.C_Str());
+	if (ImGui::TreeNode("Light", "Has Lights? : %s", m_rpScene->HasLights() ? "YES" : "NO")) {
+		if (m_rpScene->HasLights()) {
+			for (int i = 0; i < m_rpScene->mNumLights; ++i) {
+				ImGui::Text("Light Name : %s", m_rpScene->mLights[i]->mName.C_Str());
+				ImGui::Separator();
+			}
+		}
+		ImGui::TreePop();
+	}
 
-			std::println("\t\tNumAnimMeshes : {}", mesh->mNumAnimMeshes);
-			std::println("\t\tNumBones : {}", mesh->mNumBones);
-			std::println("\t\tNumVertices : {}", mesh->mNumVertices);
-			std::println("\t\tNumFaces : {}", mesh->mNumFaces);
-			std::println("\t\tNumUVComponents : {}", mesh->mNumUVComponents);
-
-			std::println("\t\tNumColorChannels : {}", mesh->GetNumColorChannels());
-			std::println("\t\tNumUVChannels : {}", mesh->GetNumUVChannels());
-
-			std::println("\t\tHasBones : {} ", mesh->HasBones());
-			if (mesh->HasBones()) {
-				std::println("\t\tNumBones : {}", mesh->mNumBones);
-				for (int j = 0; j < mesh->mNumBones; ++j) {
-					aiBone* pBone = mesh->mBones[j];
-					std::println("\t\t\tBone Name : {}", pBone->mName.C_Str());
-					std::println("\t\t\tNum Weights : {}", pBone->mNumWeights);
-					//for (int k = 0; k < pBone->mNumWeights; ++k) {
-					//	aiVertexWeight pWeight = pBone->mWeights[k];
-					//	std::println("\t\t\t\tBone#{} : {{ VertexID : {:5}, Weight : {:5.2f} }}", k, pWeight.mVertexId, pWeight.mWeight);
-					//}
-
+	if (ImGui::TreeNode("Mat", "Has Materials? : %s", m_rpScene->HasMaterials() ? "YES" : "NO")) {
+		if (m_rpScene->HasMaterials()) {
+			for (int i = 0; i < m_rpScene->mNumMaterials; ++i) {
+				std::string strTreeKey1 = std::format("{} #{}", "Material", i);
+				if (ImGui::TreeNode(strTreeKey1.c_str())) {
+					aiMaterial* material = m_rpScene->mMaterials[i];
+					ImGui::Text("Material Name : %s", material->GetName().C_Str());
+					ImGui::Text("NumAllocated : %o", material->mNumAllocated);
+					ImGui::Text("NumProperties : %o", material->mNumProperties);
+					for (int j = 0; j < material->mNumProperties; ++j) {
+						std::string strTreeKey2 = std::format("{} #{}", "property", j);
+						if (ImGui::TreeNode(strTreeKey2.c_str())) {
+							aiMaterialProperty* materialProperty = material->mProperties[j];
+							ImGui::Text("Property Key #%d : %s", j, materialProperty->mKey.C_Str());
+							ImGui::TreePop();
+						}
+					}
+					ImGui::TreePop();
 				}
-
+				ImGui::Separator();
 			}
-
-
-			std::println("\t\tHasFaces : {} ", mesh->HasFaces());
-			std::println("\t\tHasNormals : {} ", mesh->HasNormals());
-			std::println("\t\tHasPositions : {} ", mesh->HasPositions());
-			std::println("\t\tHasTangentsAndBitangents : {} ", mesh->HasTangentsAndBitangents());
-			std::println("\t\tNumUVChannels : {} ", mesh->GetNumUVChannels());
-			std::println("\t\tNumColorChannels : {} ", mesh->GetNumColorChannels());
-
-			std::println();
 		}
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Mesh", "Has Meshes? : %s", m_rpScene->HasMeshes() ? "YES" : "NO")) {
+
+		if (m_rpScene->HasMeshes()) {
+			for (int i = 0; i < m_rpScene->mNumMeshes; ++i) {
+				std::string strTreeKey1 = std::format("{} #{}", "Mesh", i);
+				if (ImGui::TreeNode(strTreeKey1.c_str())) {
+					aiMesh* mesh = m_rpScene->mMeshes[i];
+					ImGui::Text("Mesh Name : %s", mesh->mName.C_Str());
+					ImGui::Text("NumAnimMeshes : %o", mesh->mNumAnimMeshes);
+					if (ImGui::TreeNode("Bone", "HasBones : %s ", mesh->HasBones() ? "YES" : "NO")) {
+						if (mesh->HasBones()) {
+							for (int j = 0; j < mesh->mNumBones; ++j) {
+								aiBone* bone = mesh->mBones[j];
+								std::string strTreeKey2 = std::format("{} #{} - {} - NumWeights : {}", "Bone", j, bone->mName.C_Str(), bone->mNumWeights);
+								if (ImGui::TreeNode(strTreeKey2.c_str())) {
+									for (int k = 0; k < bone->mNumWeights; ++k) {
+										ImGui::Text("Weight #%d : %f", k, bone->mWeights->mWeight);
+									}
+									ImGui::TreePop();
+								}
+							}
+						}
+						ImGui::TreePop();
+					}
+
+					if (ImGui::TreeNode("Pos", "HasPositions : %s ", mesh->HasPositions() ? "YES" : "NO")){
+						ImGui::Text("NumVertices : %o", mesh->mNumVertices);
+						for (int j = 0; j < mesh->mNumVertices; ++j) {
+							aiVector3D pos = mesh->mVertices[j];
+							ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", pos.x, pos.y, pos.z).c_str());
+						}
+
+						ImGui::TreePop();
+					}
+
+					if (ImGui::TreeNode("Face", "HasFaces : %s ", mesh->HasFaces() ? "YES" : "NO")){
+						ImGui::Text("NumVertices : %o", mesh->mNumFaces);
+						for (int j = 0; j < mesh->mNumFaces; ++j) {
+							aiFace pos = mesh->mFaces[j];
+							//ImGui::Text("Primitive : %d", pos.mNumIndices);
+							std::string strFace;
+							switch (pos.mNumIndices) {
+							case 1: strFace = std::format("{{ {:5} }}", pos.mIndices[0]); break;
+							case 2: strFace = std::format("{{ {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1]); break;
+							case 3: strFace = std::format("{{ {:5}, {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1], pos.mIndices[2]); break;
+							case 4: strFace = std::format("{{ {:5}, {:5}, {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1], pos.mIndices[2], pos.mIndices[3]); break;
+							default:
+								std::unreachable();
+							}
+
+							ImGui::Text("#%4d : %s", j, strFace.c_str());
+						}
+
+						ImGui::TreePop();
+					}
+
+					if (ImGui::TreeNode("Normal", "HasNormals : %s ", mesh->HasNormals() ? "YES" : "NO")){
+						ImGui::Text("NumVertices : %o", mesh->mNumVertices);
+						for (int j = 0; j < mesh->mNumVertices; ++j) {
+							aiVector3D normal = mesh->mNormals[j];
+							ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", normal.x, normal.y, normal.z).c_str());
+						}
+						
+						ImGui::TreePop();
+					}
+
+					if (ImGui::TreeNode("TanBiTan","HasTangentsAndBitangents : %s ", mesh->HasTangentsAndBitangents() ? "YES" : "NO")){
+						ImGui::Text("NumVertices : %o", mesh->mNumVertices);
+						ImGui::Text("%s", std::format("		 {:<20}					   {:<20}", "Tangent", "Bitangent").c_str());
+						for (int j = 0; j < mesh->mNumVertices; ++j) {
+							aiVector3D tan = mesh->mTangents[j];
+							aiVector3D biTan = mesh->mBitangents[j];
+							ImGui::Text("#%5d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", tan.x, tan.y, tan.z).c_str());
+							ImGui::SameLine();
+							ImGui::Text("			%s", std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", biTan.x, biTan.y, biTan.z).c_str());
+						}
+						
+						ImGui::TreePop();
+					}
+
+					if (ImGui::TreeNode("UV","HasUVChannels : %s ", mesh->GetNumUVChannels() ? "YES" : "NO")) {
+						ImGui::Text("NumUVChannels : %o", mesh->GetNumUVChannels());
+						ImGui::Text("NumUVComponents : [%o, %o, %o, %o, %o, %o, %o, %o]",
+							mesh->mNumUVComponents[0], mesh->mNumUVComponents[1], mesh->mNumUVComponents[2], mesh->mNumUVComponents[3],
+							mesh->mNumUVComponents[4], mesh->mNumUVComponents[5], mesh->mNumUVComponents[6], mesh->mNumUVComponents[7]);
+						
+						// Something wrong
+						for (int j = 0; j < mesh->GetNumUVChannels(); ++j) {
+							const aiString* strUVName = mesh->GetTextureCoordsName(j);
+							ImGui::Text("Texture Coord Name : %s", strUVName->C_Str());
+							aiVector3D* textureCoords = mesh->mTextureCoords[j];
+							for (int k = 0; k < mesh->mNumVertices; ++k) {
+								std::string strUV;
+								switch (mesh->mNumUVComponents[j]) {
+								case 1: strUV = std::format("{{ {:5} }}", mesh->mTextureCoords[j][k][0]); break;
+								case 2: strUV = std::format("{{ {:5}, {:5} }}", mesh->mTextureCoords[j][k][0], mesh->mTextureCoords[j][k][1]); break;
+								case 3: strUV = std::format("{{ {:5}, {:5}, {:5} }}", mesh->mTextureCoords[j][k][0], mesh->mTextureCoords[j][k][1], mesh->mTextureCoords[j][k][2]); break;
+								case 4: strUV = std::format("{{ {:5}, {:5}, {:5}, {:5} }}", mesh->mTextureCoords[j][k][0], mesh->mTextureCoords[j][k][1], mesh->mTextureCoords[j][k][2], mesh->mTextureCoords[j][k][3]); break;
+								default:
+									std::unreachable();
+								}
+								ImGui::Text("#%4d : %s", k, strUV.c_str());
+							}
+							ImGui::Separator();
+						}
+
+
+						ImGui::TreePop();
+					}
+
+					if (ImGui::TreeNode("Color", "HasColorChannels : %s ", mesh->GetNumColorChannels() ? "YES" : "NO")) {
+						ImGui::Text("NumColorChannels : %o", mesh->GetNumColorChannels());
+
+						ImGui::TreePop();
+					}
+
+					ImGui::TreePop();
+				}
+				ImGui::Separator();
+			}
+		}
+
+
+		ImGui::TreePop();
 	}
 
 
-	std::println("Has Skeletons? : {}", m_rpScene->hasSkeletons());
-	std::println("Has Textures? : {}", m_rpScene->HasTextures());
+	ImGui::Text("Has Skeletons? : %s", m_rpScene->hasSkeletons() ? "YES" : "NO");
+	ImGui::Text("Has Textures? : %s", m_rpScene->HasTextures() ? "YES" : "NO");
 
 
 }
