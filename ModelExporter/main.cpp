@@ -26,7 +26,9 @@ int main()
 	
 			int n;
 			std::cin >> n;
-	
+
+			std::cout << "\r";
+
 			switch (n)
 			{
 			case 1:

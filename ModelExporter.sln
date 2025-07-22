@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36310.24
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ModelExporter", "ModelExporter\ModelExporter.vcxproj", "{41AC17A2-1387-4BC0-8CB5-2CF8F7AE8D39}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ModelExporterD3D12", "ModelExporterD3D12\ModelExporterD3D12.vcxproj", "{6028E9DC-9262-4E79-967F-B316337F96EE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,14 @@ Global
 		{41AC17A2-1387-4BC0-8CB5-2CF8F7AE8D39}.Release|x64.Build.0 = Release|x64
 		{41AC17A2-1387-4BC0-8CB5-2CF8F7AE8D39}.Release|x86.ActiveCfg = Release|Win32
 		{41AC17A2-1387-4BC0-8CB5-2CF8F7AE8D39}.Release|x86.Build.0 = Release|Win32
+		{6028E9DC-9262-4E79-967F-B316337F96EE}.Debug|x64.ActiveCfg = Debug|x64
+		{6028E9DC-9262-4E79-967F-B316337F96EE}.Debug|x64.Build.0 = Debug|x64
+		{6028E9DC-9262-4E79-967F-B316337F96EE}.Debug|x86.ActiveCfg = Debug|Win32
+		{6028E9DC-9262-4E79-967F-B316337F96EE}.Debug|x86.Build.0 = Debug|Win32
+		{6028E9DC-9262-4E79-967F-B316337F96EE}.Release|x64.ActiveCfg = Release|x64
+		{6028E9DC-9262-4E79-967F-B316337F96EE}.Release|x64.Build.0 = Release|x64
+		{6028E9DC-9262-4E79-967F-B316337F96EE}.Release|x86.ActiveCfg = Release|Win32
+		{6028E9DC-9262-4E79-967F-B316337F96EE}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -38,8 +38,41 @@ bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
 
 	m_rpRootNode = m_rpScene->mRootNode;
 
-
 	return true;
+}
+
+void AssimpImporter::Run()
+{
+	ImGui::Begin("AssimpImporter");
+
+	if (not m_bLoaded) {
+		ImGui::InputText("Model Path", &m_strPath);
+		ImGui::Text("%s - Length : %d", m_strPath.c_str(), m_strPath.length());
+		if (ImGui::Button("Load")) {
+			m_bLoaded = LoadModelFromPath(m_strPath);
+		}
+	}
+
+	ImGui::Text("%s", m_bLoaded ? "Model Loaded" : "Model not yet Loaded");
+
+	if(ImGui::BeginTabBar("")){
+		if (ImGui::BeginTabItem("Scene Info")) {
+
+			ImGui::EndTabItem();
+		}
+		
+		if (ImGui::BeginTabItem("Node Info")) {
+
+			ImGui::EndTabItem();
+		}
+
+
+
+		ImGui::EndTabBar();
+	}
+	
+
+	ImGui::End();
 }
 
 void AssimpImporter::ShowSceneAttribute()
