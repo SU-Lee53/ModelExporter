@@ -16,6 +16,9 @@
     <Filter Include="소스 파일\ImGui">
       <UniqueIdentifier>{82dda0bc-435d-471b-af39-cf159d0fce7b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="HLSL">
+      <UniqueIdentifier>{870d0b70-c747-48f5-91fc-271a73800479}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -84,6 +87,15 @@
     <ClInclude Include="..\ImGui\imgui_stdlib.h">
       <Filter>소스 파일\ImGui</Filter>
     </ClInclude>
+    <ClInclude Include="GameObject.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Mesh.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Material.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ModelExporterD3D12.cpp">
@@ -134,6 +146,15 @@
     <ClCompile Include="..\ImGui\imgui_stdlib.cpp">
       <Filter>소스 파일\ImGui</Filter>
     </ClCompile>
+    <ClCompile Include="GameObject.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Mesh.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Material.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ModelExporterD3D12.rc">
@@ -152,5 +173,10 @@
     <Text Include="..\ImGui\LICENSE.txt">
       <Filter>소스 파일\ImGui</Filter>
     </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shader.hlsl">
+      <Filter>HLSL</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

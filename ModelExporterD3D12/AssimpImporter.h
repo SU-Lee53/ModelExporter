@@ -1,17 +1,20 @@
 #pragma once
-
+#include "GameObject.h"
 
 class AssimpImporter
 {
 public:
-	AssimpImporter();
+	AssimpImporter(ComPtr<ID3D12Device14> pDevice);
 
 	bool LoadModelFromPath(std::string_view svPath);
 
 	void Run();
 
+private:
 	void ShowSceneAttribute();
 	void ShowNodeAll();
+	std::shared_ptr<OBJECT_IMPORT_INFO> 
+		LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> pParent);
 
 private:
 	void PrintTabs();
@@ -21,9 +24,22 @@ private:
 private:
 	void ShowNode(const aiNode& node);
 	void PrintMatrix(const aiMatrix4x4& aimtx);
-	void PrintMesh(const aiMesh& aimesh);
-	void PrintMetaData(const aiMetadata& metaData, size_t idx);
+	void PrintMesh(const aiMesh& mesh);
 
+private:
+	std::string FormatMatrix(const aiMatrix4x4& aimtx);
+	std::string FormatMetaData(const aiMetadata& metaData, size_t idx);
+
+private:
+	void CreateCommandList();
+	void CreateFence();
+	void WaitForGPUComplete();
+	void ExcuteCommandList();
+	void ResetCommandList();
+
+private:
+	MESH_IMPORT_INFO LoadMeshData(const aiMesh& node);
+	MATERIAL_IMPORT_INFO LoadMaterialData(const aiMaterial& node);
 
 private:
 	bool m_bLoaded = false;
@@ -35,4 +51,16 @@ private:
 	const aiScene* m_rpScene = nullptr;
 	aiNode* m_rpRootNode = nullptr;
 
+private:
+	std::shared_ptr<GameObject> m_pLoadedObject = nullptr;
+
+private:
+	ComPtr<ID3D12Device14>				m_pd3dDevice = nullptr;		// Reference to D3DCore::m_pd3dDevice
+	ComPtr<ID3D12GraphicsCommandList>	m_pd3dCommandList = nullptr;
+	ComPtr<ID3D12CommandAllocator>		m_pd3dCommandAllocator = nullptr;
+	ComPtr<ID3D12CommandQueue>			m_pd3dCommandQueue = nullptr;
+
+	ComPtr<ID3D12Fence>		m_pd3dFence = nullptr;
+	HANDLE					m_hFenceEvent = nullptr;
+	UINT64					m_nFenceValue = 0;
 };

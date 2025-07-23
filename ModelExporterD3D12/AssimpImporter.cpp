@@ -4,8 +4,12 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-AssimpImporter::AssimpImporter()
+AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
+	: m_pd3dDevice{ pDevice }
 {
+	CreateCommandList();
+	CreateFence();
+
 	m_pImporter = make_shared<Assimp::Importer>();
 }
 
@@ -45,6 +49,7 @@ bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
 
 void AssimpImporter::Run()
 {
+
 	ImGui::Begin("AssimpImporter");
 
 	static std::string s;
@@ -61,23 +66,34 @@ void AssimpImporter::Run()
 
 	ImGui::NewLine();
 
-	if(ImGui::BeginTabBar("")){
+	if (ImGui::BeginTabBar("")){
 		if (ImGui::BeginTabItem("Scene Info")) {
 			ShowSceneAttribute();
 			ImGui::EndTabItem();
 		}
 		
 		if (ImGui::BeginTabItem("Node Info")) {
-
+			ShowNodeAll();
 			ImGui::EndTabItem();
 		}
+		
+		if (ImGui::BeginTabItem("Load")) {
+			if (!m_pLoadedObject) {
+				if (ImGui::Button("Load")) {
+					auto p = LoadObject(*m_rpRootNode, nullptr);
+					ResetCommandList();
+					m_pLoadedObject = GameObject::LoadFromImporter(m_pd3dDevice, m_pd3dCommandList, p, nullptr);
+					ExcuteCommandList();
+				}
 
-
+			}
+			
+			ImGui::EndTabItem();
+		}
 
 		ImGui::EndTabBar();
 	}
 	
-
 	ImGui::End();
 }
 
@@ -147,129 +163,32 @@ void AssimpImporter::ShowSceneAttribute()
 			for (int i = 0; i < m_rpScene->mNumMeshes; ++i) {
 				std::string strTreeKey1 = std::format("{} #{}", "Mesh", i);
 				if (ImGui::TreeNode(strTreeKey1.c_str())) {
-					aiMesh* mesh = m_rpScene->mMeshes[i];
-					ImGui::Text("Mesh Name : %s", mesh->mName.C_Str());
-					ImGui::Text("NumAnimMeshes : %o", mesh->mNumAnimMeshes);
-					if (ImGui::TreeNode("Bone", "HasBones : %s ", mesh->HasBones() ? "YES" : "NO")) {
-						if (mesh->HasBones()) {
-							for (int j = 0; j < mesh->mNumBones; ++j) {
-								aiBone* bone = mesh->mBones[j];
-								std::string strTreeKey2 = std::format("{} #{} - {} - NumWeights : {}", "Bone", j, bone->mName.C_Str(), bone->mNumWeights);
-								if (ImGui::TreeNode(strTreeKey2.c_str())) {
-									for (int k = 0; k < bone->mNumWeights; ++k) {
-										ImGui::Text("Weight #%d : %f", k, bone->mWeights->mWeight);
-									}
-									ImGui::TreePop();
-								}
-							}
-						}
-						ImGui::TreePop();
-					}
-
-					if (ImGui::TreeNode("Pos", "HasPositions : %s ", mesh->HasPositions() ? "YES" : "NO")){
-						ImGui::Text("NumVertices : %o", mesh->mNumVertices);
-						for (int j = 0; j < mesh->mNumVertices; ++j) {
-							aiVector3D pos = mesh->mVertices[j];
-							ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", pos.x, pos.y, pos.z).c_str());
-						}
-
-						ImGui::TreePop();
-					}
-
-					if (ImGui::TreeNode("Face", "HasFaces : %s ", mesh->HasFaces() ? "YES" : "NO")){
-						ImGui::Text("NumVertices : %o", mesh->mNumFaces);
-						for (int j = 0; j < mesh->mNumFaces; ++j) {
-							aiFace pos = mesh->mFaces[j];
-							//ImGui::Text("Primitive : %d", pos.mNumIndices);
-							std::string strFace;
-							switch (pos.mNumIndices) {
-							case 1: strFace = std::format("{{ {:5} }}", pos.mIndices[0]); break;
-							case 2: strFace = std::format("{{ {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1]); break;
-							case 3: strFace = std::format("{{ {:5}, {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1], pos.mIndices[2]); break;
-							case 4: strFace = std::format("{{ {:5}, {:5}, {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1], pos.mIndices[2], pos.mIndices[3]); break;
-							default:
-								std::unreachable();
-							}
-
-							ImGui::Text("#%4d : %s", j, strFace.c_str());
-						}
-
-						ImGui::TreePop();
-					}
-
-					if (ImGui::TreeNode("Normal", "HasNormals : %s ", mesh->HasNormals() ? "YES" : "NO")){
-						ImGui::Text("NumVertices : %o", mesh->mNumVertices);
-						for (int j = 0; j < mesh->mNumVertices; ++j) {
-							aiVector3D normal = mesh->mNormals[j];
-							ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", normal.x, normal.y, normal.z).c_str());
-						}
-						
-						ImGui::TreePop();
-					}
-
-					if (ImGui::TreeNode("TanBiTan","HasTangentsAndBitangents : %s ", mesh->HasTangentsAndBitangents() ? "YES" : "NO")){
-						ImGui::Text("NumVertices : %o", mesh->mNumVertices);
-						ImGui::Text("%s", std::format("		 {:<20}					   {:<20}", "Tangent", "Bitangent").c_str());
-						for (int j = 0; j < mesh->mNumVertices; ++j) {
-							aiVector3D tan = mesh->mTangents[j];
-							aiVector3D biTan = mesh->mBitangents[j];
-							ImGui::Text("#%5d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", tan.x, tan.y, tan.z).c_str());
-							ImGui::SameLine();
-							ImGui::Text("			%s", std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", biTan.x, biTan.y, biTan.z).c_str());
-						}
-						
-						ImGui::TreePop();
-					}
-
-					if (ImGui::TreeNode("UV","HasUVChannels : %s ", mesh->GetNumUVChannels() ? "YES" : "NO")) {
-						ImGui::Text("NumUVChannels : %o", mesh->GetNumUVChannels());
-						ImGui::Text("NumUVComponents : [%o, %o, %o, %o, %o, %o, %o, %o]",
-							mesh->mNumUVComponents[0], mesh->mNumUVComponents[1], mesh->mNumUVComponents[2], mesh->mNumUVComponents[3],
-							mesh->mNumUVComponents[4], mesh->mNumUVComponents[5], mesh->mNumUVComponents[6], mesh->mNumUVComponents[7]);
-						
-						// Something wrong
-						for (int j = 0; j < mesh->GetNumUVChannels(); ++j) {
-							const aiString* strUVName = mesh->GetTextureCoordsName(j);
-							ImGui::Text("Texture Coord Name : %s", strUVName->C_Str());
-							aiVector3D* textureCoords = mesh->mTextureCoords[j];
-							for (int k = 0; k < mesh->mNumVertices; ++k) {
-								std::string strUV;
-								switch (mesh->mNumUVComponents[j]) {
-								case 1: strUV = std::format("{{ {:5} }}", mesh->mTextureCoords[j][k][0]); break;
-								case 2: strUV = std::format("{{ {:5}, {:5} }}", mesh->mTextureCoords[j][k][0], mesh->mTextureCoords[j][k][1]); break;
-								case 3: strUV = std::format("{{ {:5}, {:5}, {:5} }}", mesh->mTextureCoords[j][k][0], mesh->mTextureCoords[j][k][1], mesh->mTextureCoords[j][k][2]); break;
-								case 4: strUV = std::format("{{ {:5}, {:5}, {:5}, {:5} }}", mesh->mTextureCoords[j][k][0], mesh->mTextureCoords[j][k][1], mesh->mTextureCoords[j][k][2], mesh->mTextureCoords[j][k][3]); break;
-								default:
-									std::unreachable();
-								}
-								ImGui::Text("#%4d : %s", k, strUV.c_str());
-							}
-							ImGui::Separator();
-						}
-
-
-						ImGui::TreePop();
-					}
-
-					if (ImGui::TreeNode("Color", "HasColorChannels : %s ", mesh->GetNumColorChannels() ? "YES" : "NO")) {
-						ImGui::Text("NumColorChannels : %o", mesh->GetNumColorChannels());
-
-						ImGui::TreePop();
-					}
-
+					PrintMesh(*m_rpScene->mMeshes[i]);
 					ImGui::TreePop();
 				}
 				ImGui::Separator();
 			}
 		}
 
-
 		ImGui::TreePop();
 	}
 
-
 	ImGui::Text("Has Skeletons? : %s", m_rpScene->hasSkeletons() ? "YES" : "NO");
-	ImGui::Text("Has Textures? : %s", m_rpScene->HasTextures() ? "YES" : "NO");
+
+	if (ImGui::TreeNode("Texture", "Has Textures? : %s", m_rpScene->HasTextures() ? "YES" : "NO")) {
+		if (m_rpScene->HasTextures()) {
+			ImGui::Text("NumTextures : %o", m_rpScene->mNumTextures);
+			for (int i = 0; i < m_rpScene->mNumTextures; ++i) {
+				aiTexture* pTexture = m_rpScene->mTextures[i];
+				ImGui::Text("Texture Name : %s", pTexture->mFilename.C_Str());
+				ImGui::Text("Texture Width : %o", pTexture->mWidth);
+				ImGui::Text("Texture Height : %o", pTexture->mHeight);
+				ImGui::Text("achFormatHint : %s", pTexture->achFormatHint);
+			}
+
+		}
+		ImGui::TreePop();
+	}
 
 
 }
@@ -281,40 +200,51 @@ void AssimpImporter::ShowNodeAll()
 
 void AssimpImporter::ShowNode(const aiNode& node)
 {
-	auto nChildren = node.mNumChildren;
-	auto nMeshes = node.mNumMeshes;
-	
-	std::cout << std::boolalpha;
+	std::string strTreeKey1 = std::format("Node Name : {:<20} - NumChildren : {}", node.mName.C_Str(), node.mNumChildren);
+	if (ImGui::TreeNode(strTreeKey1.c_str())) {
+		ImGui::SeparatorText("Data");
 
-	PrintTabs(m_nTabs); std::cout << "===============================================" << std::endl;
-	PrintTabs(m_nTabs); std::cout << "Node Name : " << node.mName.C_Str() << std::endl;
-	PrintTabs(m_nTabs); std::cout << "Children : " << nChildren << std::endl;
-	PrintTabs(m_nTabs); std::cout << "Meshes : " << nMeshes << std::endl;
-	for (int i = 0; i < nMeshes; ++i) {
-		PrintTabs(m_nTabs); std::cout << "\tMesh #" << i<< std::endl;
-		PrintMesh(*m_rpScene->mMeshes[node.mMeshes[i]]);
-	}
+		ImGui::Text("NumMeshes : %o", node.mNumMeshes);
+		for (int i = 0; i < node.mNumMeshes; ++i) {
+			aiMesh* mesh = m_rpScene->mMeshes[node.mMeshes[i]];
+			std::string strTreeKey2 = std::format("Mesh #{:<5} : {:<20}", i, mesh->mName.C_Str());
+			if (ImGui::TreeNode(strTreeKey2.c_str())) {
+				PrintMesh(*mesh);
+				ImGui::TreePop();
+			}
+		}
+		ImGui::Separator();
 
-	PrintTabs(m_nTabs); std::cout << "Transform : " << std::endl;
-	PrintMatrix(node.mTransformation);
+		ImGui::Text("Transform : ");
+		ImGui::Text("%s", FormatMatrix(node.mTransformation).c_str());
 
-	PrintTabs(m_nTabs); std::cout << "MetaData? : " << (bool)node.mMetaData << std::endl;
-	if (node.mMetaData) {
-		aiMetadata* pMeta = node.mMetaData;
-		for (int i = 0; i < pMeta->mNumProperties; ++i) {
-			PrintTabs(m_nTabs); std::cout << '\t' << pMeta->mKeys[i].C_Str() << " : ";
-			PrintMetaData(*node.mMetaData, i); std::cout << std::endl;
+		ImGui::Separator();
+
+		if (node.mMetaData) {
+			aiMetadata* pMeta = node.mMetaData;
+			std::string strTreeKey2 = std::format("Metadata NumProperties : {}", pMeta->mNumProperties);
+			if (ImGui::TreeNode(strTreeKey2.c_str())) {
+				for (int i = 0; i < pMeta->mNumProperties; ++i) {
+					std::string strMetaProperty = std::format("MetaData #{:3} : {:>30} - {:<20}", i, pMeta->mKeys[i].C_Str(), FormatMetaData(*node.mMetaData, i));
+					ImGui::Text("%s", strMetaProperty.c_str());
+				}
+				ImGui::TreePop();
+			}
+		}
+		else {
+			ImGui::Text("NO METADATA");
 		}
 
+		ImGui::NewLine();
+		ImGui::SeparatorText("Children");
+		for (int i = 0; i < node.mNumChildren; ++i) {
+			ShowNode(*node.mChildren[i]);
+		}
+		
+		ImGui::TreePop();
 	}
 
-	PrintTabs(m_nTabs); std::cout << "===============================================" << std::endl;
 
-	for (int i = 0; i < node.mNumChildren; ++i) {
-		m_nTabs++;
-		ShowNode(*node.mChildren[i]);
-	}
-	m_nTabs--;
 }
 
 void AssimpImporter::PrintMatrix(const aiMatrix4x4& aimtx)
@@ -327,100 +257,296 @@ void AssimpImporter::PrintMatrix(const aiMatrix4x4& aimtx)
 	PrintTabs(m_nTabs); std::println("\tR4 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f}]", xmf4x4Matrix._41, xmf4x4Matrix._42, xmf4x4Matrix._43, xmf4x4Matrix._44);
 }
 
-void AssimpImporter::PrintMesh(const aiMesh& aimesh)
+std::string AssimpImporter::FormatMatrix(const aiMatrix4x4& aimtx)
 {
-	PrintTabs(m_nTabs); std::println("\t{{ HasBones : {} }}",					aimesh.HasBones());
-	PrintTabs(m_nTabs); std::println("\t{{ HasFaces : {} }}",					aimesh.HasFaces());
-	PrintTabs(m_nTabs); std::println("\t{{ HasNormals : {} }}",				aimesh.HasNormals());
-	PrintTabs(m_nTabs); std::println("\t{{ HasPositions : {} }}",				aimesh.HasPositions());
-	PrintTabs(m_nTabs); std::println("\t{{ HasTangentsAndBitangents : {} }}",	aimesh.HasTangentsAndBitangents());
+	XMFLOAT4X4 xmf4x4Matrix((float*)&aimtx.a1);
 
-	PrintTabs(m_nTabs); std::println("\t{{ NumUVChannels : {} }}",		aimesh.GetNumUVChannels());
-	PrintTabs(m_nTabs); std::println("\t{{ NumColorChannels : {} }}",	aimesh.GetNumColorChannels());
-
+	return std::format("R1 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]\nR2 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]\nR3 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]\nR4 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]\n",
+		xmf4x4Matrix._11, xmf4x4Matrix._12, xmf4x4Matrix._13, xmf4x4Matrix._14,
+		xmf4x4Matrix._21, xmf4x4Matrix._22, xmf4x4Matrix._23, xmf4x4Matrix._24,
+		xmf4x4Matrix._31, xmf4x4Matrix._32, xmf4x4Matrix._33, xmf4x4Matrix._34,
+		xmf4x4Matrix._41, xmf4x4Matrix._42, xmf4x4Matrix._43, xmf4x4Matrix._44
+	);
 
 }
 
-void AssimpImporter::PrintMetaData(const aiMetadata& metaData, size_t idx)
+void AssimpImporter::PrintMesh(const aiMesh& mesh)
 {
+	ImGui::Text("Mesh Name : %s", mesh.mName.C_Str());
+	ImGui::Text("NumAnimMeshes : %o", mesh.mNumAnimMeshes);
+	if (ImGui::TreeNode("Bone", "HasBones : %s ", mesh.HasBones() ? "YES" : "NO")) {
+		if (mesh.HasBones()) {
+			for (int j = 0; j < mesh.mNumBones; ++j) {
+				aiBone* bone = mesh.mBones[j];
+				std::string strTreeKey2 = std::format("{} #{} - {} - NumWeights : {}", "Bone", j, bone->mName.C_Str(), bone->mNumWeights);
+				if (ImGui::TreeNode(strTreeKey2.c_str())) {
+					for (int k = 0; k < bone->mNumWeights; ++k) {
+						ImGui::Text("Weight #%d : %f", k, bone->mWeights->mWeight);
+					}
+					ImGui::TreePop();
+				}
+			}
+		}
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Pos", "HasPositions : %s ", mesh.HasPositions() ? "YES" : "NO")) {
+		ImGui::Text("NumVertices : %o", mesh.mNumVertices);
+		for (int j = 0; j < mesh.mNumVertices; ++j) {
+			aiVector3D pos = mesh.mVertices[j];
+			ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", pos.x, pos.y, pos.z).c_str());
+		}
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Face", "HasFaces : %s ", mesh.HasFaces() ? "YES" : "NO")) {
+		ImGui::Text("NumFaces : %o", mesh.mNumFaces);
+		for (int j = 0; j < mesh.mNumFaces; ++j) {
+			aiFace pos = mesh.mFaces[j];
+			//ImGui::Text("Primitive : %d", pos.mNumIndices);
+			std::string strFace;
+			switch (pos.mNumIndices) {
+			case 1: strFace = std::format("{{ {:5} }}", pos.mIndices[0]); break;
+			case 2: strFace = std::format("{{ {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1]); break;
+			case 3: strFace = std::format("{{ {:5}, {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1], pos.mIndices[2]); break;
+			case 4: strFace = std::format("{{ {:5}, {:5}, {:5}, {:5} }}", pos.mIndices[0], pos.mIndices[1], pos.mIndices[2], pos.mIndices[3]); break;
+			default:
+				std::unreachable();
+			}
+
+			ImGui::Text("#%4d : %s", j, strFace.c_str());
+		}
+
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Normal", "HasNormals : %s ", mesh.HasNormals() ? "YES" : "NO")) {
+		ImGui::Text("NumVertices : %o", mesh.mNumVertices);
+		for (int j = 0; j < mesh.mNumVertices; ++j) {
+			aiVector3D normal = mesh.mNormals[j];
+			ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", normal.x, normal.y, normal.z).c_str());
+		}
+
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("TanBiTan", "HasTangentsAndBitangents : %s ", mesh.HasTangentsAndBitangents() ? "YES" : "NO")) {
+		ImGui::Text("NumVertices : %o", mesh.mNumVertices);
+		ImGui::Text("%s", std::format("		 {:<20}					   {:<20}", "Tangent", "Bitangent").c_str());
+		for (int j = 0; j < mesh.mNumVertices; ++j) {
+			aiVector3D tan = mesh.mTangents[j];
+			aiVector3D biTan = mesh.mBitangents[j];
+			ImGui::Text("#%5d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", tan.x, tan.y, tan.z).c_str());
+			ImGui::SameLine();
+			ImGui::Text("			%s", std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", biTan.x, biTan.y, biTan.z).c_str());
+		}
+
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("UV", "HasUVChannels : %s ", mesh.GetNumUVChannels() ? "YES" : "NO")) {
+		ImGui::Text("NumUVChannels : %o", mesh.GetNumUVChannels());
+		ImGui::Text("NumUVComponents : [%o, %o, %o, %o, %o, %o, %o, %o]",
+			mesh.mNumUVComponents[0], mesh.mNumUVComponents[1], mesh.mNumUVComponents[2], mesh.mNumUVComponents[3],
+			mesh.mNumUVComponents[4], mesh.mNumUVComponents[5], mesh.mNumUVComponents[6], mesh.mNumUVComponents[7]);
+
+		for (int j = 0; j < mesh.GetNumUVChannels(); ++j) {
+			std::string strTreeKey1 = std::format("UVChannel #{}", j);
+			if (ImGui::TreeNode(strTreeKey1.c_str())) {
+				std::string strUVName = mesh.HasTextureCoordsName(j) ? mesh.GetTextureCoordsName(j)->C_Str() : "UNDEFINED"s;
+				ImGui::Text("Texture Coord Name : %s", strUVName.c_str());
+				aiVector3D* textureCoords = mesh.mTextureCoords[j];
+				for (int k = 0; k < mesh.mNumVertices; ++k) {
+					std::string strUV;
+					switch (mesh.mNumUVComponents[j]) {
+					case 1: strUV = std::format("{{ {:5} }}", mesh.mTextureCoords[j][k][0]); break;
+					case 2: strUV = std::format("{{ {:5}, {:5} }}", mesh.mTextureCoords[j][k][0], mesh.mTextureCoords[j][k][1]); break;
+					case 3: strUV = std::format("{{ {:5}, {:5}, {:5} }}",
+						mesh.mTextureCoords[j][k][0], mesh.mTextureCoords[j][k][1], mesh.mTextureCoords[j][k][2]); break;
+					case 4: strUV = std::format("{{ {:5}, {:5}, {:5}, {:5} }}",
+						mesh.mTextureCoords[j][k][0], mesh.mTextureCoords[j][k][1], mesh.mTextureCoords[j][k][2], mesh.mTextureCoords[j][k][3]); break;
+					default:
+						std::unreachable();
+					}
+					ImGui::Text("#%4d : %s", k, strUV.c_str());
+				}
+				ImGui::TreePop();
+			}
+
+			ImGui::Separator();
+		}
+
+
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode("Color", "HasColorChannels : %s ", mesh.GetNumColorChannels() ? "YES" : "NO")) {
+		ImGui::Text("NumColorChannels : %o", mesh.GetNumColorChannels());
+		for (int j = 0; j < mesh.GetNumColorChannels(); ++j) {
+			aiColor4D* colorChannel = mesh.mColors[j];
+			std::string strTreeKey1 = std::format("ColorChannel #{}", j);
+			for (int k = 0; k < mesh.mNumVertices; ++k) {
+				ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} }}", colorChannel[k].r, colorChannel[k].g, colorChannel[k].b, colorChannel[k].a).c_str());
+			}
+		}
+		ImGui::TreePop();
+	}
+}
+
+std::string AssimpImporter::FormatMetaData(const aiMetadata& metaData, size_t idx)
+{
+	std::string strIndex{ "Metadata #{}", idx };
+
 	switch (metaData.mValues[idx].mType)
 	{
 	case AI_BOOL:
 	{
 		bool data;
 		::memcpy(&data, metaData.mValues[idx].mData, sizeof(bool));
-		std::cout << data;
-		break;
+		return std::format("{:>10} - {}", "bool", data);
 	}
 	case AI_INT32:
 	{
 		int32_t data;
 		::memcpy(&data, metaData.mValues[idx].mData, sizeof(int32_t));
-		std::cout << data;
-		break;
+		return std::format("{:>10} - {}", "int32_t", data);
 	}
 	break;
 	case AI_UINT64:
 	{
 		uint64_t data;
 		::memcpy(&data, metaData.mValues[idx].mData, sizeof(uint64_t));
-		std::cout << data;
-		break;
+		return std::format("{:>10} - {}", "uint64_t", data);
 	}
 	case AI_FLOAT:
 	{
 		float data;
 		::memcpy(&data, metaData.mValues[idx].mData, sizeof(float));
-		std::cout << data;
-		break;
+		return std::format("{:>10} - {}", "float", data);
 	}
 	case AI_DOUBLE:
 	{
 		double data;
 		::memcpy(&data, metaData.mValues[idx].mData, sizeof(double));
-		std::cout << data;
-		break;
+		return std::format("{:>10} - {}", "double", data);
 	}
 	case AI_AISTRING:
 	{
-		aiString v;
-		metaData.Get<aiString>(static_cast<unsigned int>(idx), v);
-		std::cout << v.C_Str();
-		break;
+		aiString data;
+		metaData.Get<aiString>(static_cast<unsigned int>(idx), data);
+		return std::format("{:>10} - {}", "string", data.C_Str());
 	}
 	case AI_AIVECTOR3D:
 	{
 		XMFLOAT3 data;
 		::memcpy(&data, metaData.mValues[idx].mData, sizeof(XMFLOAT3));
-		std::print("XMFLOAT3 : {{ {}, {}, {} }}", data.x, data.y, data.z);
-		break;
+		return std::format("{:>10} - {{{: 5.3f}, {: 5.3f}, {: 5.3f} }}", "XMFLOAT3", data.x, data.y, data.z);
 	}
 	case AI_AIMETADATA:
 	{
 		aiMetadata v;
 		metaData.Get<aiMetadata>(static_cast<unsigned int>(idx), v);
-		std::cout << "aiMetaData..." << std::endl;
+		return "aiMetaData..."s;
 		break;
 	}
 	case AI_INT64:
 	{
 		int64_t data;
 		::memcpy(&data, metaData.mValues[idx].mData, sizeof(int64_t));
-		std::cout << data;
-		break;
+		return std::format("{:>10} - {}", "int64_t", data);
 	}
 	case AI_UINT32:
 	{
 		uint64_t data;
 		::memcpy(&data, metaData.mValues[idx].mData, sizeof(uint64_t));
-		std::cout << data;
-		break;
+		return std::format("{:>10} - {}", "uint64_t", data);
 	}
 
 
 	default:
 		break;
 	}
+}
+
+std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> pParent)
+{
+	std::shared_ptr<OBJECT_IMPORT_INFO> pObjInfo = std::make_shared<OBJECT_IMPORT_INFO>();
+
+	pObjInfo->strNodeName = node.mName.C_Str();
+	pObjInfo->xmf4x4Transform = XMFLOAT4X4(&node.mTransformation.a1);
+	pObjInfo->pParent = pParent;
+
+	for (int i = 0; i < node.mNumMeshes; ++i) {
+		aiMesh* pMesh = m_rpScene->mMeshes[node.mMeshes[i]];
+		pObjInfo->meshInfos.push_back(LoadMeshData(*pMesh));
+		pObjInfo->materialInfos.push_back(LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]));
+	}
+
+	for (int i = 0; i < node.mNumChildren; ++i) {
+		pObjInfo->pChildren.push_back(LoadObject(*node.mChildren[i], pObjInfo));
+	}
+
+	return pObjInfo;
+}
+
+MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
+{
+	MESH_IMPORT_INFO info;
+
+	uint32_t nVertices = mesh.mNumVertices;
+	info.xmf3Positions.reserve(nVertices);
+	info.xmf3Normals.reserve(nVertices);
+	info.xmf3Tangents.reserve(nVertices);
+	info.xmf3BiTangents.reserve(nVertices);
+
+	for (auto color : info.xmf4Colors) {
+		color.reserve(nVertices);
+	}
+
+	for (auto texCoord : info.xmf2TexCoords) {
+		texCoord.reserve(nVertices);
+	}
+
+
+	for (int i = 0; i < nVertices; ++i) {
+		info.xmf3Positions.push_back(XMFLOAT3(&mesh.mVertices[i].x));
+		mesh.HasNormals() ? info.xmf3Normals.push_back(XMFLOAT3(&mesh.mNormals[i].x)) : info.xmf3Normals.push_back(XMFLOAT3(0.f, 0.f, 0.f));
+		if (mesh.HasTangentsAndBitangents()) {
+			info.xmf3Tangents.push_back(XMFLOAT3(&mesh.mTangents[i].x));
+			info.xmf3BiTangents.push_back(XMFLOAT3(&mesh.mBitangents[i].x));
+		}
+		else {
+			info.xmf3Tangents.push_back(XMFLOAT3(0.f, 0.f, 0.f));
+			info.xmf3BiTangents.push_back(XMFLOAT3(0.f, 0.f, 0.f));
+		}
+
+		for (int j = 0; j < mesh.GetNumColorChannels(); ++j) {
+			info.xmf4Colors[j].push_back(XMFLOAT4(&mesh.mColors[j][i].r));
+		}
+
+		for (int j = 0; j < mesh.GetNumUVChannels(); ++j) {
+			info.xmf2TexCoords[j].push_back(XMFLOAT2(&mesh.mTextureCoords[j][i].x));
+		}
+	}
+
+	info.uiIndices.reserve(mesh.mNumFaces);
+	for (int i = 0; i < mesh.mNumFaces; ++i) {
+		for (int j = 0; j < mesh.mFaces[i].mNumIndices; ++j) {
+			info.uiIndices.push_back(mesh.mFaces[i].mIndices[j]);
+		}
+	}
+
+
+
+	return info;
+}
+
+MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& node)
+{
+	MATERIAL_IMPORT_INFO info;
+	info.data = rand();
+
+	return info;
 }
 
 void AssimpImporter::PrintTabs()
@@ -437,3 +563,79 @@ void AssimpImporter::PrintTabs(int nTabs)
 	std::print("{}", s);
 }
 
+
+void AssimpImporter::CreateCommandList()
+{
+	HRESULT hr{};
+
+	// Create Command Queue
+	D3D12_COMMAND_QUEUE_DESC d3dCommandQueueDesc{};
+	::ZeroMemory(&d3dCommandQueueDesc, sizeof(D3D12_COMMAND_QUEUE_DESC));
+	{
+		d3dCommandQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+		d3dCommandQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+	}
+	hr = m_pd3dDevice->CreateCommandQueue(&d3dCommandQueueDesc, IID_PPV_ARGS(m_pd3dCommandQueue.GetAddressOf()));
+	if (FAILED(hr)) {
+		SHOW_ERROR("Failed to create CommandQueue");
+	}
+
+	// Create Command Allocator
+	hr = m_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pd3dCommandAllocator.GetAddressOf()));
+	if (FAILED(hr)) {
+		SHOW_ERROR("Failed to create CommandAllocator");
+	}
+
+	// Create Command List
+	hr = m_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pd3dCommandAllocator.Get(), NULL, IID_PPV_ARGS(m_pd3dCommandList.GetAddressOf()));
+	if (FAILED(hr)) {
+		SHOW_ERROR("Failed to create CommandList");
+	}
+
+	// Close Command List(default is opened)
+	hr = m_pd3dCommandList->Close();
+}
+
+void AssimpImporter::CreateFence()
+{
+	HRESULT hr{};
+
+	hr = m_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_pd3dFence.GetAddressOf()));
+	if (FAILED(hr)) {
+		SHOW_ERROR("Failed to create fence");
+	}
+
+	m_hFenceEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
+}
+
+void AssimpImporter::WaitForGPUComplete()
+{
+	UINT64 nFenceValue = ++m_nFenceValue;
+	HRESULT hResult = m_pd3dCommandQueue->Signal(m_pd3dFence.Get(), nFenceValue);
+	if (m_pd3dFence->GetCompletedValue() < nFenceValue)
+	{
+		hResult = m_pd3dFence->SetEventOnCompletion(nFenceValue, m_hFenceEvent);
+		::WaitForSingleObject(m_hFenceEvent, INFINITE);
+	}
+}
+
+void AssimpImporter::ExcuteCommandList()
+{
+	m_pd3dCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { m_pd3dCommandList.Get() };
+	m_pd3dCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	WaitForGPUComplete();
+}
+
+void AssimpImporter::ResetCommandList()
+{
+	HRESULT hr;
+	hr = m_pd3dCommandAllocator->Reset();
+	hr = m_pd3dCommandList->Reset(m_pd3dCommandAllocator.Get(), NULL);
+	if (FAILED(hr)) {
+		SHOW_ERROR("Faied to reset CommandList");
+		__debugbreak();
+	}
+}

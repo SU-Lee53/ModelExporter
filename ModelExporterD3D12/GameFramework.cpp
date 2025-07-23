@@ -12,8 +12,8 @@ GameFramework::GameFramework(BOOL bEnableDebugLayer, BOOL bEnableGBV)
 	g_pGuiHandler = std::make_unique<GuiHandler>();
 	g_pGuiHandler->Initialize(m_pD3DCore->GetDevice());
 
-	m_pImporter = std::make_unique<AssimpImporter>();
-	m_pImporter->LoadModelFromPath("../../Models/Sporty Granny.fbx");
+	m_pImporter = std::make_unique<AssimpImporter>(m_pD3DCore->GetDevice());
+	m_pImporter->LoadModelFromPath("../../Models/M26.fbx");
 }
 
 void GameFramework::Update()
@@ -21,7 +21,6 @@ void GameFramework::Update()
 	g_pGuiHandler->Update();
 
 	m_pImporter->Run();
-
 }
 
 void GameFramework::Render()
