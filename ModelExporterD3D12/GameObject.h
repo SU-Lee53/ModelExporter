@@ -9,26 +9,39 @@ struct OBJECT_IMPORT_INFO {
 	std::vector<MATERIAL_IMPORT_INFO> materialInfos;
 	XMFLOAT4X4 xmf4x4Transform;
 
-	std::shared_ptr<OBJECT_IMPORT_INFO> pParent;
-	std::vector<std::shared_ptr<OBJECT_IMPORT_INFO>> pChildren;
+	std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent;
+	std::vector<std::shared_ptr<OBJECT_IMPORT_INFO>> m_pChildren;
 
+};
+
+struct CB_TRANSFORM_DATA {
+	XMFLOAT4X4 xmf4x4Local;
+	XMFLOAT4X4 xmf4x4World;
 };
 
 class GameObject {
 public:
 	GameObject();
 
+	void Render(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
+
+	XMFLOAT4X4 ComputeLocalMatrix();
+
 public:
 	static std::shared_ptr<GameObject> 
-		LoadFromImporter(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, std::shared_ptr<OBJECT_IMPORT_INFO> pInfo, std::shared_ptr<GameObject> pParent);
+		LoadFromImporter(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, std::shared_ptr<OBJECT_IMPORT_INFO> pInfo, std::shared_ptr<GameObject> m_pParent);
 
 private:
 	std::vector<std::shared_ptr<Mesh>> m_pMeshes;
-	XMFLOAT4X4 m_xmf4x4Transform = {};
 	std::string m_strName = "";
 
-	std::shared_ptr<GameObject> pParent;
-	std::vector<std::shared_ptr<GameObject>> pChildren;
+	XMFLOAT4X4 m_xmf4x4Local;
+	XMFLOAT4X4 m_xmf4x4World;
+	ComPtr<ID3D12Resource> m_pCBTransform = nullptr;
+	UINT8* m_pMappedData;
+
+	std::weak_ptr<GameObject> m_pParent;
+	std::vector<std::shared_ptr<GameObject>> m_pChildren;
 
 
 };

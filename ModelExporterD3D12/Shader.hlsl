@@ -22,20 +22,21 @@ cbuffer cbCameraData : register(b0)
 
 cbuffer cbWorldTransformData : register(b1)
 {
+    matrix gmtxLocal;
     matrix gmtxWorld;
 }
 
-VS_OUTPUT VSDiffused(VS_INPUT input)
+VS_OUTPUT VSMain(VS_INPUT input)
 {
     VS_OUTPUT output;
     
-    output.pos = mul(mul(float4(input.pos, 1), gmtxWorld), gmtxViewProjection);
+    output.pos = mul(mul(mul(float4(input.pos, 1), gmtxLocal), gmtxWorld), gmtxViewProjection);
     output.color = input.color;
     
     return output;
 }
 
-float4 PSDiffused(VS_OUTPUT input) : SV_TARGET
+float4 PSMain(VS_OUTPUT input) : SV_TARGET
 {
     return input.color;
 }

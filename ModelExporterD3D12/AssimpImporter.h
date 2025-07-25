@@ -1,5 +1,7 @@
 #pragma once
 #include "GameObject.h"
+#include "Shader.h"
+#include "Camera.h"
 
 class AssimpImporter
 {
@@ -9,12 +11,13 @@ public:
 	bool LoadModelFromPath(std::string_view svPath);
 
 	void Run();
+	void RenderLoadedObject(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
 
 private:
 	void ShowSceneAttribute();
 	void ShowNodeAll();
 	std::shared_ptr<OBJECT_IMPORT_INFO> 
-		LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> pParent);
+		LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent);
 
 private:
 	void PrintTabs();
@@ -63,4 +66,8 @@ private:
 	ComPtr<ID3D12Fence>		m_pd3dFence = nullptr;
 	HANDLE					m_hFenceEvent = nullptr;
 	UINT64					m_nFenceValue = 0;
+
+private:
+	std::unique_ptr<Shader> m_upShader = nullptr;
+	std::unique_ptr<Camera> m_upCamera = nullptr;
 };

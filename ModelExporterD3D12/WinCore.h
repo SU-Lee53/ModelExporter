@@ -14,11 +14,11 @@ private:
 
 
 public:
-	static HINSTANCE sm_hInstance;
-	static HWND sm_hWnd;
+	static HINSTANCE g_hInstance;
+	static HWND g_hWnd;
 
-	static DWORD sm_dwClientWidth;
-	static DWORD sm_dwClientHeight;
+	static DWORD g_dwClientWidth;
+	static DWORD g_dwClientHeight;
 
 public:
 	std::wstring m_wstrGameName = L"Model Importer";

@@ -118,14 +118,14 @@ void D3DCore::CreateSwapChain()
 	::ZeroMemory(&dxgiSwapChainDesc, sizeof(DXGI_SWAP_CHAIN_DESC));
 	{
 		dxgiSwapChainDesc.BufferCount = m_nSwapChainBuffers;
-		dxgiSwapChainDesc.BufferDesc.Width = WinCore::sm_dwClientWidth;
-		dxgiSwapChainDesc.BufferDesc.Height = WinCore::sm_dwClientHeight;
+		dxgiSwapChainDesc.BufferDesc.Width = WinCore::g_dwClientWidth;
+		dxgiSwapChainDesc.BufferDesc.Height = WinCore::g_dwClientHeight;
 		dxgiSwapChainDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		dxgiSwapChainDesc.BufferDesc.RefreshRate.Numerator = 60;
 		dxgiSwapChainDesc.BufferDesc.RefreshRate.Denominator = 1;
 		dxgiSwapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		dxgiSwapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-		dxgiSwapChainDesc.OutputWindow = WinCore::sm_hWnd;
+		dxgiSwapChainDesc.OutputWindow = WinCore::g_hWnd;
 		dxgiSwapChainDesc.SampleDesc.Count = (m_bMsaa4xEnable) ? 4 : 1;
 		dxgiSwapChainDesc.SampleDesc.Quality = (m_bMsaa4xEnable) ? (m_nMsaa4xQualityLevels - 1) : 0;
 		dxgiSwapChainDesc.Windowed = TRUE;
@@ -147,7 +147,7 @@ void D3DCore::CreateSwapChain()
 
 	m_nSwapChainBufferIndex = m_pdxgiSwapChain->GetCurrentBackBufferIndex();
 
-	m_pdxgiFactory->MakeWindowAssociation(WinCore::sm_hWnd, DXGI_MWA_NO_ALT_ENTER);
+	m_pdxgiFactory->MakeWindowAssociation(WinCore::g_hWnd, DXGI_MWA_NO_ALT_ENTER);
 
 #ifndef _WITH_SWAPCHAIN_FULLSCREEN_STATE
 	CreateRenderTargetViews();
@@ -248,8 +248,8 @@ void D3DCore::CreateDepthStencilView()
 	{
 		d3dResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 		d3dResourceDesc.Alignment = 0;
-		d3dResourceDesc.Width = WinCore::sm_dwClientWidth;
-		d3dResourceDesc.Height = WinCore::sm_dwClientHeight;
+		d3dResourceDesc.Width = WinCore::g_dwClientWidth;
+		d3dResourceDesc.Height = WinCore::g_dwClientHeight;
 		d3dResourceDesc.DepthOrArraySize = 1;
 		d3dResourceDesc.MipLevels = 1;
 		d3dResourceDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -303,8 +303,8 @@ void D3DCore::ChangeSwapChainState()
 	DXGI_MODE_DESC dxgiTargetParameters;
 	{
 		dxgiTargetParameters.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		dxgiTargetParameters.Width = WinCore::sm_dwClientWidth;
-		dxgiTargetParameters.Height = WinCore::sm_dwClientHeight;
+		dxgiTargetParameters.Width = WinCore::g_dwClientWidth;
+		dxgiTargetParameters.Height = WinCore::g_dwClientHeight;
 		dxgiTargetParameters.RefreshRate.Numerator = 60;
 		dxgiTargetParameters.RefreshRate.Denominator = 1;
 		dxgiTargetParameters.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
@@ -319,7 +319,7 @@ void D3DCore::ChangeSwapChainState()
 
 	DXGI_SWAP_CHAIN_DESC dxgiSwapChainDesc;
 	m_pdxgiSwapChain->GetDesc(&dxgiSwapChainDesc);
-	m_pdxgiSwapChain->ResizeBuffers(m_nSwapChainBuffers, WinCore::sm_dwClientWidth, WinCore::sm_dwClientHeight,
+	m_pdxgiSwapChain->ResizeBuffers(m_nSwapChainBuffers, WinCore::g_dwClientWidth, WinCore::g_dwClientHeight,
 		dxgiSwapChainDesc.BufferDesc.Format, dxgiSwapChainDesc.Flags);
 
 	m_nSwapChainBufferIndex = m_pdxgiSwapChain->GetCurrentBackBufferIndex();

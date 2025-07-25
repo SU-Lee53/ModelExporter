@@ -2,19 +2,19 @@
 #include "WinCore.h"
 #include "Resource.h"
 
-HINSTANCE WinCore::sm_hInstance = NULL;
-HWND WinCore::sm_hWnd = NULL;
-DWORD WinCore::sm_dwClientWidth = 0;
-DWORD WinCore::sm_dwClientHeight = 0;
+HINSTANCE WinCore::g_hInstance = NULL;
+HWND WinCore::g_hWnd = NULL;
+DWORD WinCore::g_dwClientWidth = 0;
+DWORD WinCore::g_dwClientHeight = 0;
 
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 WinCore::WinCore(HINSTANCE hInstance, DWORD dwWidth, DWORD dwHeight, BOOL bEnableDebugLayer, BOOL bEnableGBV)
 {
-    sm_hInstance = hInstance;
-    sm_dwClientWidth = dwWidth;
-    sm_dwClientHeight = dwHeight;
+    g_hInstance = hInstance;
+    g_dwClientWidth = dwWidth;
+    g_dwClientHeight = dwHeight;
 
     MyRegisterClass();
 
@@ -29,7 +29,7 @@ WinCore::WinCore(HINSTANCE hInstance, DWORD dwWidth, DWORD dwHeight, BOOL bEnabl
 
 void WinCore::Run()
 {
-    HACCEL hAccelTable = LoadAccelerators(sm_hInstance, MAKEINTRESOURCE(IDC_MODELEXPORTERD3D12));
+    HACCEL hAccelTable = LoadAccelerators(g_hInstance, MAKEINTRESOURCE(IDC_MODELEXPORTERD3D12));
     MSG msg;
 
     while (TRUE) {
@@ -59,8 +59,8 @@ ATOM WinCore::MyRegisterClass()
     wcex.lpfnWndProc = WndProc;
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = 0;
-    wcex.hInstance = sm_hInstance;
-    wcex.hIcon = LoadIcon(sm_hInstance, MAKEINTRESOURCE(IDI_MODELEXPORTERD3D12));
+    wcex.hInstance = g_hInstance;
+    wcex.hIcon = LoadIcon(g_hInstance, MAKEINTRESOURCE(IDI_MODELEXPORTERD3D12));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wcex.lpszMenuName = NULL;
@@ -76,23 +76,23 @@ BOOL WinCore::InitInstance(int cmdShow)
     WCHAR szTitle[100];                  // 제목 표시줄 텍스트입니다.
     WCHAR szWindowClass[100];            // 기본 창 클래스 이름입니다.
 
-    LoadStringW(sm_hInstance, IDS_APP_TITLE, szTitle, 100);
-    LoadStringW(sm_hInstance, IDC_MODELEXPORTERD3D12, szWindowClass, 100);
+    LoadStringW(g_hInstance, IDS_APP_TITLE, szTitle, 100);
+    LoadStringW(g_hInstance, IDC_MODELEXPORTERD3D12, szWindowClass, 100);
 
-    RECT rc = { 0,0,sm_dwClientWidth, sm_dwClientHeight };
+    RECT rc = { 0,0,g_dwClientWidth, g_dwClientHeight };
     DWORD dwStyle = WS_OVERLAPPED | WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU | WS_BORDER;
     AdjustWindowRect(&rc, dwStyle, FALSE);
 
-    sm_hWnd = CreateWindowW(m_wstrGameName.c_str(), m_wstrGameName.c_str(), dwStyle, CW_USEDEFAULT, 0,
-        rc.right - rc.left, rc.bottom - rc.top, NULL, NULL, sm_hInstance, NULL);
+    g_hWnd = CreateWindowW(m_wstrGameName.c_str(), m_wstrGameName.c_str(), dwStyle, CW_USEDEFAULT, 0,
+        rc.right - rc.left, rc.bottom - rc.top, NULL, NULL, g_hInstance, NULL);
 
-    if (!sm_hWnd)
+    if (!g_hWnd)
     {
         return FALSE;
     }
 
-    ShowWindow(sm_hWnd, cmdShow);
-    UpdateWindow(sm_hWnd);
+    ShowWindow(g_hWnd, cmdShow);
+    UpdateWindow(g_hWnd);
 
     return TRUE;
 }

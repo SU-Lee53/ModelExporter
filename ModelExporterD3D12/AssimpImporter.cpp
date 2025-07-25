@@ -11,6 +11,11 @@ AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
 	CreateFence();
 
 	m_pImporter = make_shared<Assimp::Importer>();
+
+	m_upShader = std::make_unique<Shader>();
+	m_upShader->Create(m_pd3dDevice);
+
+	m_upCamera = make_unique<Camera>(pDevice);
 }
 
 bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
@@ -95,6 +100,20 @@ void AssimpImporter::Run()
 	}
 	
 	ImGui::End();
+
+	m_upCamera->Update();
+}
+
+void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
+{
+	if (m_pLoadedObject) {
+		m_upShader->Bind(pd3dRenderCommandList);
+
+		m_upCamera->BindViewportAndScissorRects(pd3dRenderCommandList);
+		m_upCamera->UpdateShaderVariables(pd3dRenderCommandList, 0);
+
+		m_pLoadedObject->Render(pd3dRenderCommandList);
+	}
 }
 
 void AssimpImporter::ShowSceneAttribute()
@@ -468,13 +487,13 @@ std::string AssimpImporter::FormatMetaData(const aiMetadata& metaData, size_t id
 	}
 }
 
-std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> pParent)
+std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent)
 {
 	std::shared_ptr<OBJECT_IMPORT_INFO> pObjInfo = std::make_shared<OBJECT_IMPORT_INFO>();
 
 	pObjInfo->strNodeName = node.mName.C_Str();
 	pObjInfo->xmf4x4Transform = XMFLOAT4X4(&node.mTransformation.a1);
-	pObjInfo->pParent = pParent;
+	pObjInfo->m_pParent = m_pParent;
 
 	for (int i = 0; i < node.mNumMeshes; ++i) {
 		aiMesh* pMesh = m_rpScene->mMeshes[node.mMeshes[i]];
@@ -483,7 +502,7 @@ std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& nod
 	}
 
 	for (int i = 0; i < node.mNumChildren; ++i) {
-		pObjInfo->pChildren.push_back(LoadObject(*node.mChildren[i], pObjInfo));
+		pObjInfo->m_pChildren.push_back(LoadObject(*node.mChildren[i], pObjInfo));
 	}
 
 	return pObjInfo;

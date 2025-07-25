@@ -34,8 +34,8 @@ void Mesh::CreateIndexBuffer(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12Gra
 {
 	HRESULT hr;
 
-	UINT nIndices = Indices.size();
-	UINT IndexBufferSize = sizeof(UINT) * nIndices;
+	m_nIndices = Indices.size();
+	UINT IndexBufferSize = sizeof(UINT) * m_nIndices;
 
 	hr = pd3dDevice->CreateCommittedResource(
 		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
@@ -128,4 +128,14 @@ std::shared_ptr<Mesh> Mesh::LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComP
 	pMesh->CreateIndexBuffer(pd3dDevice, pd3dCommandList, indices);
 	
 	return pMesh;
+}
+
+void Mesh::Render(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
+{
+	pd3dRenderCommandList->IASetPrimitiveTopology(m_d3dPrimitiveTopology);
+	pd3dRenderCommandList->IASetVertexBuffers(0, 1, &m_d3dVertexBufferView);
+
+	pd3dRenderCommandList->IASetIndexBuffer(&m_d3dIndexBufferView);
+	pd3dRenderCommandList->DrawIndexedInstanced(m_nIndices, 1, 0, 0, 0);
+
 }

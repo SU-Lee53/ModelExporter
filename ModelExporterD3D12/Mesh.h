@@ -39,6 +39,8 @@ public:
 	void CreateVertexBuffer(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, std::vector<T> vertices);
 	void CreateIndexBuffer(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, std::vector<UINT> Indices);
 
+	void Render(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
+
 public:
 	static std::shared_ptr<Mesh> LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const MESH_IMPORT_INFO& info);
 
@@ -56,6 +58,7 @@ private:
 	D3D12_PRIMITIVE_TOPOLOGY		m_d3dPrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	UINT							m_nSlot = 0;
 	UINT							m_nVertices = 0;
+	UINT							m_nIndices = 0;
 	UINT							m_nOffset = 0;
 };
 

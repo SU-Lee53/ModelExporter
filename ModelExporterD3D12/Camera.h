@@ -1,0 +1,42 @@
+#pragma once
+
+class Camera {
+public:
+	Camera(ComPtr<ID3D12Device14> m_pd3dDevice);
+	
+	void Update();
+	void ProcessInput();
+
+public:
+	void GenerateViewMatrix();
+
+	void BindViewportAndScissorRects(ComPtr<ID3D12GraphicsCommandList> pd3dCommandList) {
+		pd3dCommandList->RSSetViewports(1, &m_d3dViewport);
+		pd3dCommandList->RSSetScissorRects(1, &m_d3dScissorRect);
+	}
+
+	void UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, UINT rootParameterIndex) {
+		::memcpy(m_pMappedData, &m_xmf4x4ViewProjectionTransposed, sizeof(XMFLOAT4X4));
+		pd3dCommandList->SetGraphicsRootConstantBufferView(rootParameterIndex, m_pCBViewProj->GetGPUVirtualAddress());
+	}
+
+private:
+	XMFLOAT3 m_xmf3CamPosition = {0.f, 0.f, -15.f};
+	XMFLOAT3 m_xmf3CamRotation = {0.f, 0.f, 0.f};	// Euler
+	
+	XMFLOAT3 m_xmf3Right = {0.f, 0.f, 0.f};
+	XMFLOAT3 m_xmf3Up = {0.f, 0.f, 0.f};
+	XMFLOAT3 m_xmf3Look = {0.f, 0.f, 0.f};
+
+	XMFLOAT4X4 m_xmf4x4View;
+	XMFLOAT4X4 m_xmf4x4Projection;
+	XMFLOAT4X4 m_xmf4x4ViewProjectionTransposed;
+
+	ComPtr<ID3D12Resource> m_pCBViewProj = nullptr;
+	UINT8* m_pMappedData;
+	
+	D3D12_VIEWPORT m_d3dViewport;
+	D3D12_RECT m_d3dScissorRect;
+
+};
+
