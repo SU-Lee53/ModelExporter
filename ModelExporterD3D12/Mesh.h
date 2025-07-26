@@ -22,6 +22,8 @@ private:
 };
 
 struct MESH_IMPORT_INFO {
+	std::string strMeshName;
+
 	std::vector<XMFLOAT3>					xmf3Positions;
 	std::vector<XMFLOAT3>					xmf3Normals;
 	std::vector<XMFLOAT3>					xmf3Tangents;
@@ -41,11 +43,17 @@ public:
 
 	void Render(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
 
+	void ShowMeshInfo();
+
 public:
 	static std::shared_ptr<Mesh> LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const MESH_IMPORT_INFO& info);
 
 
 private:
+	std::vector<VertexType> m_Vertices;
+	std::vector<UINT> m_Indices;
+	std::string m_strMeshName;
+
 	ComPtr<ID3D12Resource>		m_pVertexBuffer = nullptr;
 	ComPtr<ID3D12Resource>		m_pVertexUploadBuffer = nullptr;
 	D3D12_VERTEX_BUFFER_VIEW	m_d3dVertexBufferView = {};

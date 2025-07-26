@@ -17,8 +17,8 @@ GameFramework::GameFramework(BOOL bEnableDebugLayer, BOOL bEnableGBV)
 	g_pInputManager->Initialize(WinCore::g_hWnd);
 
 	m_pImporter = std::make_unique<AssimpImporter>(m_pD3DCore->GetDevice());
-	m_pImporter->LoadModelFromPath("../../Models/M26.fbx");
-	//m_pImporter->LoadModelFromPath("../../Models/Sporty Granny.fbx");
+	m_pImporter->LoadFBXFilesFromPath("../../Models");
+	//m_pImporter->LoadModel("../../Models/Sporty Granny.fbx");
 }
 
 void GameFramework::Update()

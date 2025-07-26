@@ -8,7 +8,8 @@ class AssimpImporter
 public:
 	AssimpImporter(ComPtr<ID3D12Device14> pDevice);
 
-	bool LoadModelFromPath(std::string_view svPath);
+	void LoadFBXFilesFromPath(std::string_view svPath);
+	bool LoadModel(std::string_view svPath);
 
 	void Run();
 	void RenderLoadedObject(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
@@ -30,7 +31,6 @@ private:
 	void PrintMesh(const aiMesh& mesh);
 
 private:
-	std::string FormatMatrix(const aiMatrix4x4& aimtx);
 	std::string FormatMetaData(const aiMetadata& metaData, size_t idx);
 
 private:
@@ -53,6 +53,14 @@ private:
 	std::shared_ptr<Assimp::Importer> m_pImporter = nullptr;
 	const aiScene* m_rpScene = nullptr;
 	aiNode* m_rpRootNode = nullptr;
+
+private:
+	std::string m_strCurrentPath = "";
+	std::vector<std::string> m_strFBXFilesFromPath;
+	UINT m_ItemSelected = 0;
+	UINT m_ItemHighlighted = 0;
+
+	std::string m_strError = "";
 
 private:
 	std::shared_ptr<GameObject> m_pLoadedObject = nullptr;

@@ -12,7 +12,12 @@ struct VS_INPUT
 struct VS_OUTPUT
 {
     float4 pos : SV_POSITION;
+    float4 worldPos : POSITION;
+    float4 worldNormal : NORMAL;
+    float4 worldTangent : TANGENT;
+    float4 worldBiTangent : BITANGENT;
     float4 color : COLOR;
+    float2 TexCoord : TEXCOORD;
 };
 
 cbuffer cbCameraData : register(b0)
@@ -30,7 +35,12 @@ VS_OUTPUT VSMain(VS_INPUT input)
 {
     VS_OUTPUT output;
     
-    output.pos = mul(mul(mul(float4(input.pos, 1), gmtxLocal), gmtxWorld), gmtxViewProjection);
+    matrix mtxToWorld = mul(gmtxLocal, gmtxWorld);
+    output.worldPos = mul(float4(input.pos, 1.0f), mtxToWorld);
+    output.pos = mul(output.worldPos, gmtxViewProjection);
+    output.worldNormal = mul(float4(input.normal, 0.f), mtxToWorld);
+    output.worldTangent = mul(float4(input.tangent, 0.f), mtxToWorld);
+    output.worldBiTangent = mul(float4(input.biTangent, 0.f), mtxToWorld);
     output.color = input.color;
     
     return output;
@@ -38,5 +48,5 @@ VS_OUTPUT VSMain(VS_INPUT input)
 
 float4 PSMain(VS_OUTPUT input) : SV_TARGET
 {
-    return input.color;
+    return input.worldNormal;
 }

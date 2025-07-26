@@ -18,12 +18,30 @@ AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
 	m_upCamera = make_unique<Camera>(pDevice);
 }
 
-bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
+void AssimpImporter::LoadFBXFilesFromPath(std::string_view svPath)
+{
+	m_strFBXFilesFromPath.clear();
+
+	m_strCurrentPath = std::string{ svPath };
+	fs::path currentPath{ m_strCurrentPath };
+	if (!fs::exists(currentPath)) {
+		__debugbreak();
+	}
+
+	for (const auto& entry : fs::directory_iterator(currentPath)) {
+		if (entry.path().extension() == ".fbx" || entry.path().extension() == ".FBX") {
+			m_strFBXFilesFromPath.push_back(entry.path().filename().string());
+		}
+	}
+
+}
+
+bool AssimpImporter::LoadModel(std::string_view svPath)
 {
 	fs::path modelPath = svPath;
 
 	if (!fs::exists(modelPath)) {
-		std::cout << "Invalid Path" << std::endl;
+		SHOW_ERROR("Invalid Path");
 		return false;
 	}
 
@@ -33,7 +51,7 @@ bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
 		aiProcess_FlipUVs |
 		aiProcess_FlipWindingOrder |	// Convert to D3D
 		//aiProcess_PreTransformVertices | 
-		aiProcess_JoinIdenticalVertices |
+		//aiProcess_JoinIdenticalVertices |
 		aiProcess_Triangulate |
 		aiProcess_GenUVCoords |
 		aiProcess_GenNormals |
@@ -41,14 +59,17 @@ bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
 	);
 
 	if (!m_rpScene) {
-		std::cout << "File read failed" << std::endl;
+		m_strError = m_pImporter->GetErrorString();
+		SHOW_ERROR("File read failed");
 		return false;
+	}
+	else {
+		m_strError.clear();
 	}
 
 	m_bLoaded = true;
 	m_strPath = svPath;
 	m_rpRootNode = m_rpScene->mRootNode;
-
 
 	// Init Model
 	auto p = LoadObject(*m_rpRootNode, nullptr);
@@ -61,46 +82,77 @@ bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
 
 void AssimpImporter::Run()
 {
-
 	ImGui::Begin("AssimpImporter");
 
 	static std::string s;
 	ImGui::InputText("Model Path", &s);
 	ImGui::Text("%s - Length : %d", s.c_str(), s.length());
 	if (ImGui::Button("Load")) {
-		LoadModelFromPath(s);
+		LoadFBXFilesFromPath(s);
 	}
 
-	ImGui::Text("%s", m_bLoaded ? "Model Loaded" : "Model not yet Loaded");
+	ImGui::Text("%s", m_bLoaded ? "Model Loaded" : m_strError.c_str());
 	if (m_bLoaded) {
 		ImGui::Text("Loaded Model Path : %s", m_strPath.c_str());
+	}
+
+	if (ImGui::BeginListBox(("LoadTargets"))) {
+		for (int i = 0; i < m_strFBXFilesFromPath.size(); ++i) {
+			const bool bSelected = (m_ItemSelected == i);
+			if (ImGui::Selectable(m_strFBXFilesFromPath[i].c_str(), bSelected)) {
+				m_ItemSelected = i;
+			}
+
+			if (m_ItemHighlighted && ImGui::IsItemHovered()) {
+				m_ItemHighlighted = i;
+			}
+
+			if (bSelected) {
+				ImGui::SetItemDefaultFocus();
+			}
+		}
+
+		ImGui::EndListBox();
+	}
+
+	if (ImGui::Button("Load Model")) {
+		std::string strModelPath = std::format("{}/{}", m_strCurrentPath, m_strFBXFilesFromPath[m_ItemSelected]);
+		m_bLoaded = LoadModel(strModelPath);
 	}
 
 	ImGui::NewLine();
 
 	if (ImGui::BeginTabBar("")){
 		if (ImGui::BeginTabItem("Scene Info")) {
-			ShowSceneAttribute();
+			if (m_rpScene) {
+				ShowSceneAttribute();
+			}
+			else {
+				ImGui::Text("Scene Not Loaded");
+			}
 			ImGui::EndTabItem();
 		}
 		
 		if (ImGui::BeginTabItem("Node Info")) {
-			ShowNodeAll();
+			if (m_rpRootNode) {
+				ShowNodeAll();
+			}
+			else {
+				ImGui::Text("Node Not Loaded");
+			}
 			ImGui::EndTabItem();
 		}
 		
-		if (ImGui::BeginTabItem("Load")) {
-			if (!m_pLoadedObject) {
-				if (ImGui::Button("Load")) {
-					auto p = LoadObject(*m_rpRootNode, nullptr);
-					ResetCommandList();
-					m_pLoadedObject = GameObject::LoadFromImporter(m_pd3dDevice, m_pd3dCommandList, p, nullptr);
-					ExcuteCommandList();
+		if (m_pLoadedObject) {
+			if (ImGui::BeginTabItem("Loaded Model Hierarchy")) {
+				if (m_pLoadedObject) {
+					m_pLoadedObject->ShowObjInfo();
 				}
-
+				else {
+					ImGui::Text("Model Not Loaded");
+				}
+				ImGui::EndTabItem();
 			}
-			
-			ImGui::EndTabItem();
 		}
 
 		ImGui::EndTabBar();
@@ -165,8 +217,8 @@ void AssimpImporter::ShowSceneAttribute()
 				if (ImGui::TreeNode(strTreeKey1.c_str())) {
 					aiMaterial* material = m_rpScene->mMaterials[i];
 					ImGui::Text("Material Name : %s", material->GetName().C_Str());
-					ImGui::Text("NumAllocated : %o", material->mNumAllocated);
-					ImGui::Text("NumProperties : %o", material->mNumProperties);
+					ImGui::Text("NumAllocated : %u", material->mNumAllocated);
+					ImGui::Text("NumProperties : %u", material->mNumProperties);
 					for (int j = 0; j < material->mNumProperties; ++j) {
 						std::string strTreeKey2 = std::format("{} #{}", "property", j);
 						if (ImGui::TreeNode(strTreeKey2.c_str())) {
@@ -203,12 +255,12 @@ void AssimpImporter::ShowSceneAttribute()
 
 	if (ImGui::TreeNode("Texture", "Has Textures? : %s", m_rpScene->HasTextures() ? "YES" : "NO")) {
 		if (m_rpScene->HasTextures()) {
-			ImGui::Text("NumTextures : %o", m_rpScene->mNumTextures);
+			ImGui::Text("NumTextures : %u", m_rpScene->mNumTextures);
 			for (int i = 0; i < m_rpScene->mNumTextures; ++i) {
 				aiTexture* pTexture = m_rpScene->mTextures[i];
 				ImGui::Text("Texture Name : %s", pTexture->mFilename.C_Str());
-				ImGui::Text("Texture Width : %o", pTexture->mWidth);
-				ImGui::Text("Texture Height : %o", pTexture->mHeight);
+				ImGui::Text("Texture Width : %u", pTexture->mWidth);
+				ImGui::Text("Texture Height : %u", pTexture->mHeight);
 				ImGui::Text("achFormatHint : %s", pTexture->achFormatHint);
 			}
 
@@ -230,7 +282,7 @@ void AssimpImporter::ShowNode(const aiNode& node)
 	if (ImGui::TreeNode(strTreeKey1.c_str())) {
 		ImGui::SeparatorText("Data");
 
-		ImGui::Text("NumMeshes : %o", node.mNumMeshes);
+		ImGui::Text("NumMeshes : %u", node.mNumMeshes);
 		for (int i = 0; i < node.mNumMeshes; ++i) {
 			aiMesh* mesh = m_rpScene->mMeshes[node.mMeshes[i]];
 			std::string strTreeKey2 = std::format("Mesh #{:<5} : {:<20}", i, mesh->mName.C_Str());
@@ -242,7 +294,7 @@ void AssimpImporter::ShowNode(const aiNode& node)
 		ImGui::Separator();
 
 		ImGui::Text("Transform : ");
-		ImGui::Text("%s", FormatMatrix(node.mTransformation).c_str());
+		ImGui::Text("%s", ::FormatMatrix(node.mTransformation).c_str());
 
 		ImGui::Separator();
 
@@ -283,23 +335,10 @@ void AssimpImporter::PrintMatrix(const aiMatrix4x4& aimtx)
 	PrintTabs(m_nTabs); std::println("\tR4 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f}]", xmf4x4Matrix._41, xmf4x4Matrix._42, xmf4x4Matrix._43, xmf4x4Matrix._44);
 }
 
-std::string AssimpImporter::FormatMatrix(const aiMatrix4x4& aimtx)
-{
-	XMFLOAT4X4 xmf4x4Matrix((float*)&aimtx.a1);
-
-	return std::format("R1 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]\nR2 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]\nR3 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]\nR4 : [{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]\n",
-		xmf4x4Matrix._11, xmf4x4Matrix._12, xmf4x4Matrix._13, xmf4x4Matrix._14,
-		xmf4x4Matrix._21, xmf4x4Matrix._22, xmf4x4Matrix._23, xmf4x4Matrix._24,
-		xmf4x4Matrix._31, xmf4x4Matrix._32, xmf4x4Matrix._33, xmf4x4Matrix._34,
-		xmf4x4Matrix._41, xmf4x4Matrix._42, xmf4x4Matrix._43, xmf4x4Matrix._44
-	);
-
-}
-
 void AssimpImporter::PrintMesh(const aiMesh& mesh)
 {
 	ImGui::Text("Mesh Name : %s", mesh.mName.C_Str());
-	ImGui::Text("NumAnimMeshes : %o", mesh.mNumAnimMeshes);
+	ImGui::Text("NumAnimMeshes : %u", mesh.mNumAnimMeshes);
 	if (ImGui::TreeNode("Bone", "HasBones : %s ", mesh.HasBones() ? "YES" : "NO")) {
 		if (mesh.HasBones()) {
 			for (int j = 0; j < mesh.mNumBones; ++j) {
@@ -317,7 +356,7 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 	}
 
 	if (ImGui::TreeNode("Pos", "HasPositions : %s ", mesh.HasPositions() ? "YES" : "NO")) {
-		ImGui::Text("NumVertices : %o", mesh.mNumVertices);
+		ImGui::Text("NumVertices : %u", mesh.mNumVertices);
 		for (int j = 0; j < mesh.mNumVertices; ++j) {
 			aiVector3D pos = mesh.mVertices[j];
 			ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", pos.x, pos.y, pos.z).c_str());
@@ -326,7 +365,7 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 	}
 
 	if (ImGui::TreeNode("Face", "HasFaces : %s ", mesh.HasFaces() ? "YES" : "NO")) {
-		ImGui::Text("NumFaces : %o", mesh.mNumFaces);
+		ImGui::Text("NumFaces : %u", mesh.mNumFaces);
 		for (int j = 0; j < mesh.mNumFaces; ++j) {
 			aiFace pos = mesh.mFaces[j];
 			//ImGui::Text("Primitive : %d", pos.mNumIndices);
@@ -347,7 +386,7 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 	}
 
 	if (ImGui::TreeNode("Normal", "HasNormals : %s ", mesh.HasNormals() ? "YES" : "NO")) {
-		ImGui::Text("NumVertices : %o", mesh.mNumVertices);
+		ImGui::Text("NumVertices : %u", mesh.mNumVertices);
 		for (int j = 0; j < mesh.mNumVertices; ++j) {
 			aiVector3D normal = mesh.mNormals[j];
 			ImGui::Text("#%4d : %s", j, std::format("{{ {: 5.3f}, {: 5.3f}, {: 5.3f} }}", normal.x, normal.y, normal.z).c_str());
@@ -357,7 +396,7 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 	}
 
 	if (ImGui::TreeNode("TanBiTan", "HasTangentsAndBitangents : %s ", mesh.HasTangentsAndBitangents() ? "YES" : "NO")) {
-		ImGui::Text("NumVertices : %o", mesh.mNumVertices);
+		ImGui::Text("NumVertices : %u", mesh.mNumVertices);
 		ImGui::Text("%s", std::format("		 {:<20}					   {:<20}", "Tangent", "Bitangent").c_str());
 		for (int j = 0; j < mesh.mNumVertices; ++j) {
 			aiVector3D tan = mesh.mTangents[j];
@@ -371,8 +410,8 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 	}
 
 	if (ImGui::TreeNode("UV", "HasUVChannels : %s ", mesh.GetNumUVChannels() ? "YES" : "NO")) {
-		ImGui::Text("NumUVChannels : %o", mesh.GetNumUVChannels());
-		ImGui::Text("NumUVComponents : [%o, %o, %o, %o, %o, %o, %o, %o]",
+		ImGui::Text("NumUVChannels : %u", mesh.GetNumUVChannels());
+		ImGui::Text("NumUVComponents : [%u, %u, %u, %u, %u, %u, %u, %u]",
 			mesh.mNumUVComponents[0], mesh.mNumUVComponents[1], mesh.mNumUVComponents[2], mesh.mNumUVComponents[3],
 			mesh.mNumUVComponents[4], mesh.mNumUVComponents[5], mesh.mNumUVComponents[6], mesh.mNumUVComponents[7]);
 
@@ -407,7 +446,7 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 	}
 
 	if (ImGui::TreeNode("Color", "HasColorChannels : %s ", mesh.GetNumColorChannels() ? "YES" : "NO")) {
-		ImGui::Text("NumColorChannels : %o", mesh.GetNumColorChannels());
+		ImGui::Text("NumColorChannels : %u", mesh.GetNumColorChannels());
 		for (int j = 0; j < mesh.GetNumColorChannels(); ++j) {
 			aiColor4D* colorChannel = mesh.mColors[j];
 			std::string strTreeKey1 = std::format("ColorChannel #{}", j);
@@ -499,7 +538,10 @@ std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& nod
 	std::shared_ptr<OBJECT_IMPORT_INFO> pObjInfo = std::make_shared<OBJECT_IMPORT_INFO>();
 
 	pObjInfo->strNodeName = node.mName.C_Str();
-	pObjInfo->xmf4x4Transform = XMFLOAT4X4(&node.mTransformation.a1);
+
+	XMMATRIX xmmtxTransform = XMLoadFloat4x4(&XMFLOAT4X4(&node.mTransformation.a1));
+	xmmtxTransform = XMMatrixTranspose(xmmtxTransform);
+	XMStoreFloat4x4(&pObjInfo->xmf4x4Transform, xmmtxTransform);
 	pObjInfo->m_pParent = m_pParent;
 
 	for (int i = 0; i < node.mNumMeshes; ++i) {
@@ -519,6 +561,8 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 {
 	MESH_IMPORT_INFO info;
 
+	info.strMeshName = mesh.mName.C_Str();
+
 	uint32_t nVertices = mesh.mNumVertices;
 	info.xmf3Positions.reserve(nVertices);
 	info.xmf3Normals.reserve(nVertices);
@@ -535,11 +579,11 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 
 
 	for (int i = 0; i < nVertices; ++i) {
-		info.xmf3Positions.push_back(XMFLOAT3(&mesh.mVertices[i].x));
-		mesh.HasNormals() ? info.xmf3Normals.push_back(XMFLOAT3(&mesh.mNormals[i].x)) : info.xmf3Normals.push_back(XMFLOAT3(0.f, 0.f, 0.f));
+		info.xmf3Positions.push_back(XMFLOAT3(mesh.mVertices[i].x, mesh.mVertices[i].y, mesh.mVertices[i].z));
+		mesh.HasNormals() ? info.xmf3Normals.push_back(XMFLOAT3(mesh.mNormals[i].x, mesh.mNormals[i].y, mesh.mNormals[i].z)) : info.xmf3Normals.push_back(XMFLOAT3(0.f, 0.f, 0.f));
 		if (mesh.HasTangentsAndBitangents()) {
-			info.xmf3Tangents.push_back(XMFLOAT3(&mesh.mTangents[i].x));
-			info.xmf3BiTangents.push_back(XMFLOAT3(&mesh.mBitangents[i].x));
+			info.xmf3Tangents.push_back(XMFLOAT3(mesh.mTangents[i].x, mesh.mTangents[i].y, mesh.mTangents[i].z));
+			info.xmf3BiTangents.push_back(XMFLOAT3(mesh.mBitangents[i].x, mesh.mBitangents[i].y, mesh.mBitangents[i].z));
 		}
 		else {
 			info.xmf3Tangents.push_back(XMFLOAT3(0.f, 0.f, 0.f));
@@ -547,11 +591,12 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 		}
 
 		for (int j = 0; j < mesh.GetNumColorChannels(); ++j) {
-			info.xmf4Colors[j].push_back(XMFLOAT4(&mesh.mColors[j][i].r));
+			info.xmf4Colors[j].push_back(XMFLOAT4(mesh.mColors[j][i].r, mesh.mColors[j][i].g, mesh.mColors[j][i].b, mesh.mColors[j][i].a));
 		}
 
 		for (int j = 0; j < mesh.GetNumUVChannels(); ++j) {
-			info.xmf2TexCoords[j].push_back(XMFLOAT2(&mesh.mTextureCoords[j][i].x));
+			assert(mesh.mNumUVComponents[j] == 2);
+			info.xmf2TexCoords[j].push_back(XMFLOAT2(mesh.mTextureCoords[j][i].x, mesh.mTextureCoords[j][i].y));
 		}
 	}
 

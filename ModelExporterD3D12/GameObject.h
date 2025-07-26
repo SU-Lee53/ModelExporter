@@ -27,6 +27,8 @@ public:
 
 	XMFLOAT4X4 ComputeLocalMatrix();
 
+	void ShowObjInfo();
+
 public:
 	static std::shared_ptr<GameObject> 
 		LoadFromImporter(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, std::shared_ptr<OBJECT_IMPORT_INFO> pInfo, std::shared_ptr<GameObject> m_pParent);
@@ -38,10 +40,14 @@ private:
 	XMFLOAT4X4 m_xmf4x4Local;
 	XMFLOAT4X4 m_xmf4x4World;
 	ComPtr<ID3D12Resource> m_pCBTransform = nullptr;
-	UINT8* m_pMappedData;
+	UINT8* m_pTransformMappedPtr;
 
 	std::weak_ptr<GameObject> m_pParent;
 	std::vector<std::shared_ptr<GameObject>> m_pChildren;
+
+	XMFLOAT4 m_xmf4Color = {1.f, 0.f, 0.f, 1.f};
+	ComPtr<ID3D12Resource> m_pCBColor = nullptr;
+	UINT8* m_pColorMappedPtr;
 
 
 };

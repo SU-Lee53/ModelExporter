@@ -86,12 +86,11 @@ void Mesh::CreateIndexBuffer(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12Gra
 std::shared_ptr<Mesh> Mesh::LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const MESH_IMPORT_INFO& info)
 {
 	std::shared_ptr<Mesh> pMesh = std::make_shared<Mesh>();
-
-	std::vector<VertexType> vertices(info.xmf3Positions.size());
-	std::vector<UINT> indices;
+	pMesh->m_strMeshName = info.strMeshName;
 
 	size_t idx{ 0 };
-	std::generate(vertices.begin(), vertices.end(), [&info, &idx]()-> VertexType {
+	pMesh->m_Vertices.reserve(info.xmf3Positions.size());
+	std::generate_n(std::back_inserter(pMesh->m_Vertices), info.xmf3Positions.size(), [&info, &idx]()-> VertexType {
 		VertexType v;
 		v.xmf3Position	= info.xmf3Positions[idx];
 		v.xmf3Normal	= info.xmf3Normals[idx];
@@ -121,11 +120,11 @@ std::shared_ptr<Mesh> Mesh::LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComP
 		return v;
 	});
 
-	indices.reserve(info.uiIndices.size());
-	std::copy(info.uiIndices.begin(), info.uiIndices.end(), std::back_inserter(indices));
+	pMesh->m_Indices.reserve(info.uiIndices.size());
+	std::copy(info.uiIndices.begin(), info.uiIndices.end(), std::back_inserter(pMesh->m_Indices));
 
-	pMesh->CreateVertexBuffer(pd3dDevice, pd3dCommandList, vertices);
-	pMesh->CreateIndexBuffer(pd3dDevice, pd3dCommandList, indices);
+	pMesh->CreateVertexBuffer(pd3dDevice, pd3dCommandList, pMesh->m_Vertices);
+	pMesh->CreateIndexBuffer(pd3dDevice, pd3dCommandList, pMesh->m_Indices);
 	
 	return pMesh;
 }
@@ -137,5 +136,20 @@ void Mesh::Render(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
 
 	pd3dRenderCommandList->IASetIndexBuffer(&m_d3dIndexBufferView);
 	pd3dRenderCommandList->DrawIndexedInstanced(m_nIndices, 1, 0, 0, 0);
+}
+
+void Mesh::ShowMeshInfo()
+{
+	std::string strTreeKey1 = std::format("{} - nVertices: {:<5}", m_strMeshName, m_Vertices.size());
+	if(ImGui::TreeNode(strTreeKey1.c_str())) {
+		ImGui::TreePop();
+	}
+
+	std::string strTreeKey2 = std::format("{} - nIndices: {:<5}", m_strMeshName, m_Indices.size());
+	if(ImGui::TreeNode(strTreeKey2.c_str())) {
+
+
+		ImGui::TreePop();
+	}
 
 }

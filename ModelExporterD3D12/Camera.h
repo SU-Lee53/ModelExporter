@@ -16,7 +16,7 @@ public:
 	}
 
 	void UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, UINT rootParameterIndex) {
-		::memcpy(m_pMappedData, &m_xmf4x4ViewProjectionTransposed, sizeof(XMFLOAT4X4));
+		::memcpy(m_pTransformMappedPtr, &m_xmf4x4ViewProjectionTransposed, sizeof(XMFLOAT4X4));
 		pd3dCommandList->SetGraphicsRootConstantBufferView(rootParameterIndex, m_pCBViewProj->GetGPUVirtualAddress());
 	}
 
@@ -36,10 +36,13 @@ private:
 	XMFLOAT4X4 m_xmf4x4ViewProjectionTransposed;
 
 	ComPtr<ID3D12Resource> m_pCBViewProj = nullptr;
-	UINT8* m_pMappedData;
+	UINT8* m_pTransformMappedPtr;
 	
 	D3D12_VIEWPORT m_d3dViewport;
 	D3D12_RECT m_d3dScissorRect;
+
+private:
+	float m_fMovingSpeed = 0.05f;
 
 };
 
