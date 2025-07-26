@@ -3,6 +3,9 @@
 
 Camera::Camera(ComPtr<ID3D12Device14> m_pd3dDevice)
 {
+	XMStoreFloat4x4(&m_xmf4x4View, XMMatrixIdentity());
+	XMStoreFloat4x4(&m_xmf4x4Projection, XMMatrixIdentity());
+
 	m_pd3dDevice->CreateCommittedResource(
 		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
 		D3D12_HEAP_FLAG_NONE,
@@ -130,8 +133,12 @@ void Camera::GenerateViewMatrix()
 	m_xmf4x4View._42 = -XMVectorGetX(XMVector3Dot(XMLoadFloat3(&m_xmf3CamPosition), XMLoadFloat3(&m_xmf3Up)));
 	m_xmf4x4View._43 = -XMVectorGetX(XMVector3Dot(XMLoadFloat3(&m_xmf3CamPosition), XMLoadFloat3(&m_xmf3Look)));
 
+	//XMMATRIX View = XMMatrixLookAtLH(XMLoadFloat3(&m_xmf3CamPosition), XMLoadFloat3(&m_xmf3Look), XMLoadFloat3(&m_xmf3Up));
+	//XMStoreFloat4x4(&m_xmf4x4View, View);
+
+
 	// No need to update Projection
 
-	// View * Proj
+	// View* Proj
 	XMStoreFloat4x4(&m_xmf4x4ViewProjectionTransposed, XMMatrixMultiplyTranspose(XMLoadFloat4x4(&m_xmf4x4View), XMLoadFloat4x4(&m_xmf4x4Projection)));
 }

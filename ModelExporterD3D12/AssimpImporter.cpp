@@ -49,6 +49,13 @@ bool AssimpImporter::LoadModelFromPath(std::string_view svPath)
 	m_strPath = svPath;
 	m_rpRootNode = m_rpScene->mRootNode;
 
+
+	// Init Model
+	auto p = LoadObject(*m_rpRootNode, nullptr);
+	ResetCommandList();
+	m_pLoadedObject = GameObject::LoadFromImporter(m_pd3dDevice, m_pd3dCommandList, p, nullptr);
+	ExcuteCommandList();
+
 	return true;
 }
 

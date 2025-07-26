@@ -21,12 +21,15 @@ public:
 	}
 
 private:
+	void Rotate(XMFLOAT3 xmf3Rotate);
+
+private:
 	XMFLOAT3 m_xmf3CamPosition = {0.f, 0.f, -15.f};
 	XMFLOAT3 m_xmf3CamRotation = {0.f, 0.f, 0.f};	// Euler
 	
-	XMFLOAT3 m_xmf3Right = {0.f, 0.f, 0.f};
-	XMFLOAT3 m_xmf3Up = {0.f, 0.f, 0.f};
-	XMFLOAT3 m_xmf3Look = {0.f, 0.f, 0.f};
+	XMFLOAT3 m_xmf3Right = {1.f, 0.f, 0.f};
+	XMFLOAT3 m_xmf3Up = {0.f, 1.f, 0.f};
+	XMFLOAT3 m_xmf3Look = {0.f, 0.f, 1.f};
 
 	XMFLOAT4X4 m_xmf4x4View;
 	XMFLOAT4X4 m_xmf4x4Projection;
