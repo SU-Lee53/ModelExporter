@@ -44,7 +44,7 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	}
 
 	pObj->m_strName = pInfo->strNodeName;
-	pObj->m_xmf4x4Local = pInfo->xmf4x4Transform;
+	pObj->m_xmf4x4Bone = pInfo->xmf4x4Bone;
 	pObj->m_pParent = m_pParent;
 
 	for (int i = 0; i < pInfo->m_pChildren.size(); ++i) {
@@ -102,13 +102,13 @@ void GameObject::Render(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
 XMFLOAT4X4 GameObject::ComputeLocalMatrix()
 {
 	//  ????
-	XMMATRIX xmmtxResult = XMLoadFloat4x4(&m_xmf4x4Local);
+	XMMATRIX xmmtxResult = XMLoadFloat4x4(&m_xmf4x4Bone);
 
 	//assert(XMMatrixIsIdentity(xmmtxResult));
 
 	std::shared_ptr<GameObject> pParent = m_pParent.lock();
 	while (pParent != nullptr) {
-		xmmtxResult = XMMatrixMultiply(XMLoadFloat4x4(&pParent->m_xmf4x4Local), xmmtxResult);
+		xmmtxResult = XMMatrixMultiply(XMLoadFloat4x4(&pParent->m_xmf4x4Bone), xmmtxResult);
 		pParent = pParent->m_pParent.lock();
 	}
 

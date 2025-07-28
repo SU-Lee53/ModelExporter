@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <string>
 #include <filesystem>
+#include <variant>
 using namespace std::literals;
 
 // Math

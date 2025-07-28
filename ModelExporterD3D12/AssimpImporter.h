@@ -29,9 +29,13 @@ private:
 	void ShowNode(const aiNode& node);
 	void PrintMatrix(const aiMatrix4x4& aimtx);
 	void PrintMesh(const aiMesh& mesh);
+	void PrintMaterial(const aiMaterial& material);
 
 private:
+private:
 	std::string FormatMetaData(const aiMetadata& metaData, size_t idx);
+	std::string QuaryAndFormatMaterialData(const aiMaterial& material, const aiMaterialProperty& matProperty);
+
 
 private:
 	void CreateCommandList();

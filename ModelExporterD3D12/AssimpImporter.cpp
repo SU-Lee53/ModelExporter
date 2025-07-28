@@ -215,18 +215,25 @@ void AssimpImporter::ShowSceneAttribute()
 			for (int i = 0; i < m_rpScene->mNumMaterials; ++i) {
 				std::string strTreeKey1 = std::format("{} #{}", "Material", i);
 				if (ImGui::TreeNode(strTreeKey1.c_str())) {
-					aiMaterial* material = m_rpScene->mMaterials[i];
-					ImGui::Text("Material Name : %s", material->GetName().C_Str());
-					ImGui::Text("NumAllocated : %u", material->mNumAllocated);
-					ImGui::Text("NumProperties : %u", material->mNumProperties);
-					for (int j = 0; j < material->mNumProperties; ++j) {
+					aiMaterial* pMaterial = m_rpScene->mMaterials[i];
+					ImGui::Text("Material Name : %s", pMaterial->GetName().C_Str());
+					ImGui::Text("NumAllocated : %u", pMaterial->mNumAllocated);
+					ImGui::Text("NumProperties : %u", pMaterial->mNumProperties);
+
+					for (int j = 0; j < pMaterial->mNumProperties; ++j) {
 						std::string strTreeKey2 = std::format("{} #{}", "property", j);
 						if (ImGui::TreeNode(strTreeKey2.c_str())) {
-							aiMaterialProperty* materialProperty = material->mProperties[j];
+							aiMaterialProperty* materialProperty = pMaterial->mProperties[j];
 							ImGui::Text("Property Key #%d : %s", j, materialProperty->mKey.C_Str());
+							ImGui::Text("Semantic : %u", materialProperty->mSemantic);
+							ImGui::Text("DataLength : %u", materialProperty->mDataLength);
+
 							ImGui::TreePop();
 						}
 					}
+
+					PrintMaterial(*pMaterial);
+
 					ImGui::TreePop();
 				}
 				ImGui::Separator();
@@ -261,7 +268,6 @@ void AssimpImporter::ShowSceneAttribute()
 				ImGui::Text("Texture Name : %s", pTexture->mFilename.C_Str());
 				ImGui::Text("Texture Width : %u", pTexture->mWidth);
 				ImGui::Text("Texture Height : %u", pTexture->mHeight);
-				ImGui::Text("achFormatHint : %s", pTexture->achFormatHint);
 			}
 
 		}
@@ -269,6 +275,51 @@ void AssimpImporter::ShowSceneAttribute()
 	}
 
 
+}
+
+std::string AssimpImporter::QuaryAndFormatMaterialData(const aiMaterial& material, const aiMaterialProperty& matProperty)
+{
+	std::string matData;
+	switch (matProperty.mType) {
+	case aiPTI_Float :
+	{
+		ai_real f;
+		material.Get(matProperty.mKey.C_Str(), matProperty.mSemantic, matProperty.mIndex, f);
+		matData = std::format("{}", f);
+		break;
+	}
+	case aiPTI_Double :
+	{
+		ai_real f;
+		material.Get(matProperty.mKey.C_Str(), matProperty.mSemantic, matProperty.mIndex, f);
+		matData = std::format("{}", f);
+		break;
+	}
+	case aiPTI_String :
+	{
+		aiString str;
+		material.Get(matProperty.mKey.C_Str(), matProperty.mSemantic, matProperty.mIndex, str);
+		matData = std::format("{}", str.C_Str());
+		break;
+	}
+	case aiPTI_Integer :
+	{
+		int n;
+		material.Get(matProperty.mKey.C_Str(), matProperty.mSemantic, matProperty.mIndex, n);
+		matData = std::format("{}", n);
+		break;
+	}
+	case aiPTI_Buffer :
+	{
+		std::unreachable();
+		break;
+	}
+	default:
+		std::unreachable();
+		break;
+	}
+
+	return matData;
 }
 
 void AssimpImporter::ShowNodeAll()
@@ -456,6 +507,64 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 		}
 		ImGui::TreePop();
 	}
+
+	aiMaterial* pMaterial = m_rpScene->mMaterials[mesh.mMaterialIndex];
+	if (ImGui::TreeNode("Material", "Material Index : %u", mesh.mMaterialIndex)) {
+		PrintMaterial(*pMaterial);
+		ImGui::TreePop();
+	}
+
+
+
+
+
+}
+
+void AssimpImporter::PrintMaterial(const aiMaterial& material)
+{
+	ImGui::Text("Material Name : %s", material.GetName().C_Str());
+
+	aiColor4D aicDiffuse;
+	if (material.Get(AI_MATKEY_COLOR_DIFFUSE, aicDiffuse) == AI_SUCCESS) {
+		ImGui::Text("Diffuse Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicDiffuse.r, aicDiffuse.g, aicDiffuse.b, aicDiffuse.a).c_str());
+	}
+
+	aiColor4D aicAmbient;
+	if (material.Get(AI_MATKEY_COLOR_AMBIENT, aicAmbient) == AI_SUCCESS) {
+		ImGui::Text("Ambient Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicAmbient.r, aicAmbient.g, aicAmbient.b, aicAmbient.a).c_str());
+	}
+
+	aiColor4D aicSpecular;
+	if (material.Get(AI_MATKEY_COLOR_SPECULAR, aicSpecular) == AI_SUCCESS) {
+		ImGui::Text("Specular Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicSpecular.r, aicSpecular.g, aicSpecular.b, aicSpecular.a).c_str());
+	}
+
+	aiColor4D aicEmissive;
+	if (material.Get(AI_MATKEY_COLOR_EMISSIVE, aicEmissive) == AI_SUCCESS) {
+		ImGui::Text("Emissive Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicEmissive.r, aicEmissive.g, aicEmissive.b, aicEmissive.a).c_str());
+	}
+
+	aiColor4D aicTransparent;
+	if (material.Get(AI_MATKEY_COLOR_TRANSPARENT, aicTransparent) == AI_SUCCESS) {
+		ImGui::Text("Transparent Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicTransparent.r, aicTransparent.g, aicTransparent.b, aicTransparent.a).c_str());
+	}
+
+	aiColor4D aicReflective;
+	if (material.Get(AI_MATKEY_COLOR_REFLECTIVE, aicReflective) == AI_SUCCESS) {
+		ImGui::Text("Reflective Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicReflective.r, aicReflective.g, aicReflective.b, aicReflective.a).c_str());
+	}
+
+	aiString aistrtexturePath;
+	UINT nTextures;
+
+	for (int i = 0; i < AI_TEXTURE_TYPE_MAX; ++i) {
+		nTextures = material.GetTextureCount((aiTextureType)i);
+		for (int j = 0; j < nTextures; ++j) {
+			material.GetTexture((aiTextureType)i, j, &aistrtexturePath);
+			ImGui::Text("%s", std::format("{} #{} - path : {}", aiTextureTypeToString((aiTextureType)i), j, aistrtexturePath.C_Str()).c_str());
+		}
+	}
+
 }
 
 std::string AssimpImporter::FormatMetaData(const aiMetadata& metaData, size_t idx)
@@ -541,7 +650,7 @@ std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& nod
 
 	XMMATRIX xmmtxTransform = XMLoadFloat4x4(&XMFLOAT4X4(&node.mTransformation.a1));
 	xmmtxTransform = XMMatrixTranspose(xmmtxTransform);
-	XMStoreFloat4x4(&pObjInfo->xmf4x4Transform, xmmtxTransform);
+	XMStoreFloat4x4(&pObjInfo->xmf4x4Bone, xmmtxTransform);
 	pObjInfo->m_pParent = m_pParent;
 
 	for (int i = 0; i < node.mNumMeshes; ++i) {

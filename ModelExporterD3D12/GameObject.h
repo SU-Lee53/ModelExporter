@@ -7,7 +7,7 @@ struct OBJECT_IMPORT_INFO {
 
 	std::vector<MESH_IMPORT_INFO> meshInfos;
 	std::vector<MATERIAL_IMPORT_INFO> materialInfos;
-	XMFLOAT4X4 xmf4x4Transform;
+	XMFLOAT4X4 xmf4x4Bone;
 
 	std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent;
 	std::vector<std::shared_ptr<OBJECT_IMPORT_INFO>> m_pChildren;
@@ -38,6 +38,7 @@ private:
 	std::string m_strName = "";
 
 	XMFLOAT4X4 m_xmf4x4Local;
+	XMFLOAT4X4 m_xmf4x4Bone;
 	XMFLOAT4X4 m_xmf4x4World;
 	ComPtr<ID3D12Resource> m_pCBTransform = nullptr;
 	UINT8* m_pTransformMappedPtr;
