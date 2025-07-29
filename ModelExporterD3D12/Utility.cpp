@@ -59,3 +59,9 @@ std::string FormatVector4(const XMFLOAT4& xmf4Vector)
 	return std::format("[{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} ]",
 		xmf4Vector.x, xmf4Vector.y, xmf4Vector.z, xmf4Vector.w);
 }
+
+inline size_t AlignConstantBuffersize(size_t size)
+{
+	size_t alligned_size = (size + 255) & (~255);
+	return alligned_size;
+}

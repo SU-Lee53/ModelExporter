@@ -10,3 +10,5 @@ std::string FormatVector2(const XMFLOAT2& xmf2Vector);
 std::string FormatVector3(const XMFLOAT3& xmf3Vector);
 std::string FormatVector4(const XMFLOAT4& xmf4Vector);
 
+
+extern inline size_t AlignConstantBuffersize(size_t size);

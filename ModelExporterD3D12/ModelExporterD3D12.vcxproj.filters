@@ -19,6 +19,9 @@
     <Filter Include="HLSL">
       <UniqueIdentifier>{870d0b70-c747-48f5-91fc-271a73800479}</UniqueIdentifier>
     </Filter>
+    <Filter Include="소스 파일\DirectXTex">
+      <UniqueIdentifier>{1d82cf85-1ffd-43c6-8389-996cfce01bb3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -105,6 +108,12 @@
     <ClInclude Include="Camera.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="DDSTextureLoader12.h">
+      <Filter>소스 파일\DirectXTex</Filter>
+    </ClInclude>
+    <ClInclude Include="WICTextureLoader12.h">
+      <Filter>소스 파일\DirectXTex</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ModelExporterD3D12.cpp">
@@ -172,6 +181,12 @@
     </ClCompile>
     <ClCompile Include="Camera.cpp">
       <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="WICTextureLoader12.cpp">
+      <Filter>소스 파일\DirectXTex</Filter>
+    </ClCompile>
+    <ClCompile Include="DDSTextureLoader12.cpp">
+      <Filter>소스 파일\DirectXTex</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

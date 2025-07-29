@@ -32,6 +32,7 @@
 #include <utility>
 #include <print>
 #include <filesystem>
+#include <algorithm>
 
 
 // Direct3D related headers
@@ -59,14 +60,15 @@ using namespace DirectX;
 using namespace DirectX::PackedVector;
 using namespace Microsoft::WRL;
 
-
-extern inline size_t AlignConstantBuffersize(size_t size);
-
 // Import libraries
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
+
+// DirectXTex
+#include "DDSTextureLoader12.h"
+#include "WICTextureLoader12.h"
 
 // ImGUI
 #include "../ImGui/imgui.h"
@@ -86,6 +88,7 @@ extern inline size_t AlignConstantBuffersize(size_t size);
 #include "../library/include/assimp/postprocess.h"
 #include "../library/include/assimp/DefaultLogger.hpp"
 #include "../library/include/assimp/importerdesc.h"
+#include "../library/include/assimp/pbrmaterial.h"
 
 // Additional Helper Headers
 #include "Defines.h"
