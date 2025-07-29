@@ -216,22 +216,6 @@ void AssimpImporter::ShowSceneAttribute()
 				std::string strTreeKey1 = std::format("{} #{}", "Material", i);
 				if (ImGui::TreeNode(strTreeKey1.c_str())) {
 					aiMaterial* pMaterial = m_rpScene->mMaterials[i];
-					ImGui::Text("Material Name : %s", pMaterial->GetName().C_Str());
-					ImGui::Text("NumAllocated : %u", pMaterial->mNumAllocated);
-					ImGui::Text("NumProperties : %u", pMaterial->mNumProperties);
-
-					for (int j = 0; j < pMaterial->mNumProperties; ++j) {
-						std::string strTreeKey2 = std::format("{} #{}", "property", j);
-						if (ImGui::TreeNode(strTreeKey2.c_str())) {
-							aiMaterialProperty* materialProperty = pMaterial->mProperties[j];
-							ImGui::Text("Property Key #%d : %s", j, materialProperty->mKey.C_Str());
-							ImGui::Text("Semantic : %u", materialProperty->mSemantic);
-							ImGui::Text("DataLength : %u", materialProperty->mDataLength);
-
-							ImGui::TreePop();
-						}
-					}
-
 					PrintMaterial(*pMaterial);
 
 					ImGui::TreePop();
@@ -524,47 +508,113 @@ void AssimpImporter::PrintMaterial(const aiMaterial& material)
 {
 	ImGui::Text("Material Name : %s", material.GetName().C_Str());
 
-	aiColor4D aicDiffuse;
-	if (material.Get(AI_MATKEY_COLOR_DIFFUSE, aicDiffuse) == AI_SUCCESS) {
-		ImGui::Text("Diffuse Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicDiffuse.r, aicDiffuse.g, aicDiffuse.b, aicDiffuse.a).c_str());
-	}
-
-	aiColor4D aicAmbient;
-	if (material.Get(AI_MATKEY_COLOR_AMBIENT, aicAmbient) == AI_SUCCESS) {
-		ImGui::Text("Ambient Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicAmbient.r, aicAmbient.g, aicAmbient.b, aicAmbient.a).c_str());
-	}
-
-	aiColor4D aicSpecular;
-	if (material.Get(AI_MATKEY_COLOR_SPECULAR, aicSpecular) == AI_SUCCESS) {
-		ImGui::Text("Specular Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicSpecular.r, aicSpecular.g, aicSpecular.b, aicSpecular.a).c_str());
-	}
-
-	aiColor4D aicEmissive;
-	if (material.Get(AI_MATKEY_COLOR_EMISSIVE, aicEmissive) == AI_SUCCESS) {
-		ImGui::Text("Emissive Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicEmissive.r, aicEmissive.g, aicEmissive.b, aicEmissive.a).c_str());
-	}
-
-	aiColor4D aicTransparent;
-	if (material.Get(AI_MATKEY_COLOR_TRANSPARENT, aicTransparent) == AI_SUCCESS) {
-		ImGui::Text("Transparent Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicTransparent.r, aicTransparent.g, aicTransparent.b, aicTransparent.a).c_str());
-	}
-
-	aiColor4D aicReflective;
-	if (material.Get(AI_MATKEY_COLOR_REFLECTIVE, aicReflective) == AI_SUCCESS) {
-		ImGui::Text("Reflective Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicReflective.r, aicReflective.g, aicReflective.b, aicReflective.a).c_str());
-	}
-
-	aiString aistrtexturePath;
-	UINT nTextures;
-
-	for (int i = 0; i < AI_TEXTURE_TYPE_MAX; ++i) {
-		nTextures = material.GetTextureCount((aiTextureType)i);
-		for (int j = 0; j < nTextures; ++j) {
-			material.GetTexture((aiTextureType)i, j, &aistrtexturePath);
-			ImGui::Text("%s", std::format("{} #{} - path : {}", aiTextureTypeToString((aiTextureType)i), j, aistrtexturePath.C_Str()).c_str());
+	std::string strTreeKey1 = std::format("{} - Colors", material.GetName().C_Str());
+	if (ImGui::TreeNode(strTreeKey1.c_str())) {
+		aiColor4D aicDiffuse;
+		if (material.Get(AI_MATKEY_COLOR_DIFFUSE, aicDiffuse) == AI_SUCCESS) {
+			ImGui::Text("Diffuse Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicDiffuse.r, aicDiffuse.g, aicDiffuse.b, aicDiffuse.a).c_str());
 		}
+
+		aiColor4D aicAmbient;
+		if (material.Get(AI_MATKEY_COLOR_AMBIENT, aicAmbient) == AI_SUCCESS) {
+			ImGui::Text("Ambient Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicAmbient.r, aicAmbient.g, aicAmbient.b, aicAmbient.a).c_str());
+		}
+
+		aiColor4D aicSpecular;
+		if (material.Get(AI_MATKEY_COLOR_SPECULAR, aicSpecular) == AI_SUCCESS) {
+			ImGui::Text("Specular Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicSpecular.r, aicSpecular.g, aicSpecular.b, aicSpecular.a).c_str());
+		}
+
+		aiColor4D aicEmissive;
+		if (material.Get(AI_MATKEY_COLOR_EMISSIVE, aicEmissive) == AI_SUCCESS) {
+			ImGui::Text("Emissive Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicEmissive.r, aicEmissive.g, aicEmissive.b, aicEmissive.a).c_str());
+		}
+
+		aiColor4D aicTransparent;
+		if (material.Get(AI_MATKEY_COLOR_TRANSPARENT, aicTransparent) == AI_SUCCESS) {
+			ImGui::Text("Transparent Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicTransparent.r, aicTransparent.g, aicTransparent.b, aicTransparent.a).c_str());
+		}
+
+		aiColor4D aicReflective;
+		if (material.Get(AI_MATKEY_COLOR_REFLECTIVE, aicReflective) == AI_SUCCESS) {
+			ImGui::Text("Reflective Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicReflective.r, aicReflective.g, aicReflective.b, aicReflective.a).c_str());
+		}
+
+		ImGui::TreePop();
 	}
 
+
+	std::string strTreeKey2 = std::format("{} - Base Textures", material.GetName().C_Str());
+	if (ImGui::TreeNode(strTreeKey2.c_str())) {
+		aiString aistrtexturePath{};
+		UINT nTextures{};
+
+		for (int i = 0; i < AI_TEXTURE_TYPE_MAX; ++i) {
+			nTextures = material.GetTextureCount((aiTextureType)i);
+			for (int j = 0; j < nTextures; ++j) {
+				auto texture = material.GetTexture((aiTextureType)i, j, &aistrtexturePath);
+				ImGui::Text("%s", std::format("{} #{} - path : {}", aiTextureTypeToString((aiTextureType)i), j, aistrtexturePath.C_Str()).c_str());
+
+				const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrtexturePath.C_Str());
+				bool bisEmbedded = pEmbeddedTexture ? true : false;
+				ImGui::Text("Embedded? : %s", std::format("{}", bisEmbedded).c_str());
+
+				ImGui::Separator();
+			}
+		}
+
+		ImGui::TreePop();
+	}
+
+	std::string strTreeKey3 = std::format("{} - Deffered Workflow", material.GetName().C_Str());
+	if (ImGui::TreeNode(strTreeKey3.c_str())) {
+		aiColor4D aicAlbedo{};
+		aiColor4D aicDiffuse{};
+		aiColor4D aicSpecular{};
+		float fShininess{};
+		float fOpacity{};
+
+		if (material.Get(AI_MATKEY_BASE_COLOR, aicAlbedo) == AI_SUCCESS) {
+			ImGui::Text("Albedo Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicAlbedo.r, aicAlbedo.g, aicAlbedo.b, aicAlbedo.a).c_str());
+		}
+
+		if (material.Get(AI_MATKEY_COLOR_DIFFUSE, aicDiffuse) == AI_SUCCESS) {
+			ImGui::Text("Diffuse Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicDiffuse.r, aicDiffuse.g, aicDiffuse.b, aicDiffuse.a).c_str());
+		}
+
+		if (material.Get(AI_MATKEY_COLOR_SPECULAR, aicSpecular) == AI_SUCCESS) {
+			ImGui::Text("Specular Color : %s", std::format("[{:< 5.3f}, {:< 5.3f}, {:< 5.3f}, {:< 5.3f} ]", aicSpecular.r, aicSpecular.g, aicSpecular.b, aicSpecular.a).c_str());
+		}
+
+		if (material.Get(AI_MATKEY_SHININESS, fShininess) == AI_SUCCESS) {
+			ImGui::Text("Shininess Factor : %f", fShininess);
+		}
+
+		if (material.Get(AI_MATKEY_OPACITY, fOpacity) == AI_SUCCESS) {
+			ImGui::Text("Opacity Factor : %f", fOpacity);
+		}
+
+		aiString aistrTexturePath{};
+
+		if (material.GetTexture(aiTextureType_DIFFUSE, 0, &aistrTexturePath) == AI_SUCCESS) {
+			ImGui::Text("%s", std::format("{} #{} - path : {}", aiTextureTypeToString(aiTextureType_DIFFUSE), 0, aistrTexturePath.C_Str()).c_str());
+		}
+
+		if (material.GetTexture(aiTextureType_SPECULAR, 0, &aistrTexturePath) == AI_SUCCESS) {
+			ImGui::Text("%s", std::format("{} #{} - path : {}", aiTextureTypeToString(aiTextureType_SPECULAR), 0, aistrTexturePath.C_Str()).c_str());
+		}
+
+		if (material.GetTexture(aiTextureType_HEIGHT, 0, &aistrTexturePath) == AI_SUCCESS) {
+			ImGui::Text("%s", std::format("{} #{} - path : {}", aiTextureTypeToString(aiTextureType_HEIGHT), 0, aistrTexturePath.C_Str()).c_str());
+		}
+
+		if (material.GetTexture(aiTextureType_NORMALS, 0, &aistrTexturePath) == AI_SUCCESS) {
+			ImGui::Text("%s", std::format("{} #{} - path : {}", aiTextureTypeToString(aiTextureType_NORMALS), 0, aistrTexturePath.C_Str()).c_str());
+		}
+
+
+		ImGui::TreePop();
+	}
 }
 
 std::string AssimpImporter::FormatMetaData(const aiMetadata& metaData, size_t idx)
