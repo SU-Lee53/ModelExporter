@@ -71,7 +71,7 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 		aiProcess_FlipUVs |
 		aiProcess_FlipWindingOrder |	// Convert to D3D
 		//aiProcess_PreTransformVertices | 
-		//aiProcess_JoinIdenticalVertices |
+		aiProcess_JoinIdenticalVertices |
 		aiProcess_Triangulate |
 		aiProcess_GenUVCoords |
 		aiProcess_GenNormals |
@@ -183,7 +183,7 @@ void AssimpImporter::Run()
 	m_upCamera->Update();
 }
 
-void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
+void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
 {
 	if (m_pLoadedObject) {
 		m_upShader->Bind(pd3dRenderCommandList);
@@ -191,7 +191,7 @@ void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12GraphicsCommandList> pd3dRe
 		m_upCamera->BindViewportAndScissorRects(pd3dRenderCommandList);
 		m_upCamera->UpdateShaderVariables(pd3dRenderCommandList, 0);
 
-		m_pLoadedObject->Render(pd3dRenderCommandList);
+		m_pLoadedObject->Render(pDevice, pd3dRenderCommandList);
 	}
 }
 
@@ -689,8 +689,7 @@ std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& nod
 
 	for (int i = 0; i < node.mNumMeshes; ++i) {
 		aiMesh* pMesh = m_rpScene->mMeshes[node.mMeshes[i]];
-		pObjInfo->meshInfos.push_back(LoadMeshData(*pMesh));
-		pObjInfo->materialInfos.push_back(LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]));
+		pObjInfo->MeshMaterialInfoPairs.push_back(std::make_pair( LoadMeshData(*pMesh), LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]) ));
 	}
 
 	for (int i = 0; i < node.mNumChildren; ++i) {
@@ -750,14 +749,14 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 		}
 	}
 
-
-
 	return info;
 }
 
 MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& material)
 {
 	MATERIAL_IMPORT_INFO info{};
+
+	info.strMaterialName = material.GetName().C_Str();
 
 	aiColor4D aicValue{};
 	if (material.Get(AI_MATKEY_COLOR_DIFFUSE, aicValue) == AI_SUCCESS) {
@@ -800,9 +799,61 @@ MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& material
 		aiTextureType_SPECULAR,
 		aiTextureType_METALNESS,
 		aiTextureType_NORMALS,
+		aiTextureType_EMISSIVE,
 	};
 
 	aiString aistrTexturePath{};
+	
+	if (material.GetTexture(aiTextureType_DIFFUSE, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strAlbedoMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+	
+	if (material.GetTexture(aiTextureType_SPECULAR, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strSpecularMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+	
+	if (material.GetTexture(aiTextureType_METALNESS, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strMetallicMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+	
+	if (material.GetTexture(aiTextureType_NORMALS, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strNormalMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+	
+	if (material.GetTexture(aiTextureType_EMISSIVE, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strEmissionMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+
+	if (material.GetTexture(aiTextureType_DIFFUSE, 1, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strDetailAlbedoMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+
+	if (material.GetTexture(aiTextureType_NORMALS, 1, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strDetailNormalMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+
+	/*
 	for (aiTextureType tType : textureTypes) {
 		UINT nTextures = material.GetTextureCount(tType);
 		for (int i = 0; i < nTextures; ++i) {
@@ -814,11 +865,12 @@ MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& material
 			}
 		}
 	}
+	*/
 
 	return info;
 }
 
-void AssimpImporter::ExportTexture(const aiTexture& texture)
+std::string AssimpImporter::ExportTexture(const aiTexture& texture)
 {
 	fs::path curPath{ m_strPath };
 	std::string strTextureExportPath = std::format("{}/{} Textures", m_strCurrentPath, curPath.stem().string());
@@ -828,7 +880,7 @@ void AssimpImporter::ExportTexture(const aiTexture& texture)
 	fs::path savePath{ std::format("{}/{}", exportDirectoryPath.string(), pathFromEmbeddedTexture.filename().string()) };
 
 	if (fs::exists(savePath)) {
-		return;
+		return savePath.string();
 	}
 
 	if (!fs::exists(exportDirectoryPath)) {
@@ -840,13 +892,20 @@ void AssimpImporter::ExportTexture(const aiTexture& texture)
 		}
 	}
 
+	HRESULT hr;
 	if (curPath.extension().string() == ".dds") {
-		ExportDDSFile(savePath.wstring(), texture);
+		hr = ExportDDSFile(savePath.wstring(), texture);
 	}
 	else {
-		ExportWICFile(savePath.wstring(), texture);
+		hr = ExportWICFile(savePath.wstring(), texture);
 	}
 
+	if (FAILED(hr)) {
+		__debugbreak();
+	}
+
+
+	return savePath.string();
 }
 
 HRESULT AssimpImporter::ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture)

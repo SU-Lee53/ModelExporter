@@ -13,9 +13,9 @@ public:
 
 private:
 	std::shared_ptr<D3DCore> m_pD3DCore = nullptr;
-	std::unique_ptr<AssimpImporter> m_pImporter;
 
 public:
+	static std::unique_ptr<AssimpImporter> g_pImporter;
 	static std::unique_ptr<GuiHandler> g_pGuiHandler;
 	static std::unique_ptr<InputManager> g_pInputManager;
 
@@ -23,4 +23,5 @@ public:
 
 #define GUI			GameFramework::g_pGuiHandler
 #define INPUT		GameFramework::g_pInputManager
+#define IMPORTER	GameFramework::g_pImporter
 

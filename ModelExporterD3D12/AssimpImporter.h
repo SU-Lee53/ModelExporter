@@ -12,7 +12,9 @@ public:
 	bool LoadModel(std::string_view svPath);
 
 	void Run();
-	void RenderLoadedObject(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
+	void RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
+
+	std::shared_ptr<Shader> GetShader() { return m_upShader; }
 
 private:
 	void ShowSceneAttribute();
@@ -47,7 +49,7 @@ private:
 	MESH_IMPORT_INFO LoadMeshData(const aiMesh& node);
 	MATERIAL_IMPORT_INFO LoadMaterialData(const aiMaterial& node);
 
-	void ExportTexture(const aiTexture& texture);
+	std::string ExportTexture(const aiTexture& texture);
 	HRESULT ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture);
 	HRESULT ExportWICFile(std::wstring_view wsvSavePath, const aiTexture& texture);
 	void GetContainerFormat(std::wstring_view wsvSaveName, GUID& formatGUID);
@@ -84,6 +86,6 @@ private:
 	UINT64					m_nFenceValue = 0;
 
 private:
-	std::unique_ptr<Shader> m_upShader = nullptr;
-	std::unique_ptr<Camera> m_upCamera = nullptr;
+	std::shared_ptr<Shader> m_upShader = nullptr;
+	std::shared_ptr<Camera> m_upCamera = nullptr;
 };

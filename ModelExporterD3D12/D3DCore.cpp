@@ -345,6 +345,7 @@ void D3DCore::RenderBegin()
 	hr = m_pd3dCommandList->Reset(m_pd3dCommandAllocator.Get(), NULL);
 	if (FAILED(hr)) {
 		SHOW_ERROR("Faied to reset CommandList");
+		__debugbreak();
 	}
 
 	D3D12_RESOURCE_BARRIER d3dResourceBarrier;

@@ -31,6 +31,30 @@ cbuffer cbWorldTransformData : register(b1)
     matrix gmtxWorld;
 }
 
+cbuffer cbMaterialData : register(b2)
+{
+    float4  f4AlbedoColor;     // c0
+    float4  f4SpecularColor;   // c1
+    float4  f4AmbientColor;    // c2
+    float4  f4EmissiveColor;   // c3
+			
+    float   fGlossiness;          // c4.x
+    float   fSmoothness;          // c4.y
+    float   fSpecularHighlight;   // c4.z
+    float   fMetallic;            // c4.w
+    float   fGlossyReflection;    // c5.x
+}
+
+Texture2D texAlbedo : register(t0);
+Texture2D texSpecular : register(t1);
+Texture2D texMetalic : register(t2);
+Texture2D texNormal : register(t3);
+Texture2D texEmission : register(t4);
+Texture2D texDetailAlbedo : register(t5);
+Texture2D texDetailNormal : register(t6);
+
+SamplerState samplerDiffuse : register(s0);
+
 VS_OUTPUT VSMain(VS_INPUT input)
 {
     VS_OUTPUT output;
@@ -42,11 +66,15 @@ VS_OUTPUT VSMain(VS_INPUT input)
     output.worldTangent = mul(float4(input.tangent, 0.f), mtxToWorld);
     output.worldBiTangent = mul(float4(input.biTangent, 0.f), mtxToWorld);
     output.color = input.color;
+    output.TexCoord = input.TexCoord[0];
     
     return output;
 }
 
 float4 PSMain(VS_OUTPUT input) : SV_TARGET
 {
-    return input.worldNormal;
+    float4 texColor = texAlbedo.Sample(samplerDiffuse, input.TexCoord);
+    //texColor += (f4AlbedoColor + f4SpecularColor + f4AmbientColor + f4EmissiveColor);
+    float4 f4Color = (f4AlbedoColor + f4SpecularColor + f4AmbientColor + f4EmissiveColor);
+    return texColor;
 }

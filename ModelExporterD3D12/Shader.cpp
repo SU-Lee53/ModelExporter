@@ -18,19 +18,43 @@ void Shader::Bind(ComPtr<ID3D12GraphicsCommandList> pd3dCommandList)
 
 void Shader::CreateRootSignature(ComPtr<ID3D12Device> pd3dDevice)
 {
-	CD3DX12_ROOT_PARAMETER rootParameters[2];
-	rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// ViewProj
-	rootParameters[1].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// Transform
+	std::array<CD3DX12_DESCRIPTOR_RANGE, 3> descRange{};
+	descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);	// b1 transform 
+	descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);	// b2 material
+	descRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);	
+	// t0, t1, t2, t3, t4, t5
+	// 각각 Albedo(diffuse), Specular, Metallic, Normal, Emission, Detail Albedo, Detail Normal
+
+	std::array<CD3DX12_ROOT_PARAMETER, 4> rootParameters{};
+	rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// b0 ViewProj
+	rootParameters[1].InitAsDescriptorTable(1, &descRange[0]);	// transform, material
+	rootParameters[2].InitAsDescriptorTable(1, &descRange[1]);	// transform, material
+	rootParameters[3].InitAsDescriptorTable(1, &descRange[2]);	// texture 6개(최대)
 
 	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+
+	D3D12_STATIC_SAMPLER_DESC samplerDesc{};
+	{
+		samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+		samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+		samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+		samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+		samplerDesc.MipLODBias = 0.0f;
+		samplerDesc.MaxAnisotropy = 16;
+		samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+		samplerDesc.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+		samplerDesc.MinLOD = -FLT_MAX;
+		samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+		samplerDesc.ShaderRegister = 0;
+		samplerDesc.RegisterSpace = 0;
+		samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	}
 
 	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-	rootSignatureDesc.Init(2, rootParameters, 0, NULL, rootSignatureFlag);
-
+	rootSignatureDesc.Init(rootParameters.size(), rootParameters.data(), 1, &samplerDesc, rootSignatureFlag);
 
 	ComPtr<ID3DBlob> pd3dSignatureBlob = nullptr;
 	ComPtr<ID3DBlob> pd3dErrorBlob = nullptr;
@@ -59,7 +83,7 @@ void Shader::CreatePipelineState(ComPtr<ID3D12Device> pd3dDevice)
 		pipelineDesc.VS = { m_pVSBlob->GetBufferPointer(), m_pVSBlob->GetBufferSize() };
 		pipelineDesc.PS = { m_pPSBlob->GetBufferPointer(), m_pPSBlob->GetBufferSize() };
 		pipelineDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		pipelineDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+		//pipelineDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
 		pipelineDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 		pipelineDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 		pipelineDesc.InputLayout = VertexType::GetInputLayout();

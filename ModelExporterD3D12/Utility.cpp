@@ -17,6 +17,7 @@ void ShowErrorMessage(std::string_view file, int line, std::string_view message)
 	::OutputDebugStringA(strLineMsg.data());
 	::OutputDebugStringA(strDebugMsg.data());
 	::OutputDebugStringA("***************************************\n");
+
 }
 
 std::string FormatMatrix(const aiMatrix4x4& aimtx)

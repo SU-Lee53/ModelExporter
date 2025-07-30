@@ -15,7 +15,7 @@ Camera::Camera(ComPtr<ID3D12Device14> m_pd3dDevice)
 		IID_PPV_ARGS(m_pCBViewProj.GetAddressOf())
 	);
 
-	m_pCBViewProj->Map(0, NULL, reinterpret_cast<void**>(&m_pTransformMappedPtr));
+	m_pCBViewProj->Map(0, NULL, reinterpret_cast<void**>(&m_pMappedPtr));
 
 	GenerateViewMatrix();
 
@@ -60,20 +60,20 @@ void Camera::Update()
 void Camera::ProcessInput()
 {
 	// Key
-	if (INPUT->GetButtonPressed('W')) {
+	if (INPUT->GetButtonPressed(VK_UP)) {
 		XMVECTOR newPos = XMVectorMultiplyAdd(XMLoadFloat3(&m_xmf3Look), XMVectorReplicate(m_fMovingSpeed), XMLoadFloat3(&m_xmf3CamPosition));
 		XMStoreFloat3(&m_xmf3CamPosition, newPos);
 	}
-	if (INPUT->GetButtonPressed('S')) {
+	if (INPUT->GetButtonPressed(VK_DOWN)) {
 		XMVECTOR newPos = XMVectorMultiplyAdd(XMLoadFloat3(&m_xmf3Look), XMVectorReplicate(-m_fMovingSpeed), XMLoadFloat3(&m_xmf3CamPosition));
 		XMStoreFloat3(&m_xmf3CamPosition, newPos);
 	}
 
-	if (INPUT->GetButtonPressed('A')) {
+	if (INPUT->GetButtonPressed(VK_LEFT)) {
 		XMVECTOR newPos = XMVectorMultiplyAdd(XMLoadFloat3(&m_xmf3Right), XMVectorReplicate(-m_fMovingSpeed), XMLoadFloat3(&m_xmf3CamPosition));
 		XMStoreFloat3(&m_xmf3CamPosition, newPos);
 	}
-	if (INPUT->GetButtonPressed('D')) {
+	if (INPUT->GetButtonPressed(VK_RIGHT)) {
 		XMVECTOR newPos = XMVectorMultiplyAdd(XMLoadFloat3(&m_xmf3Right), XMVectorReplicate(m_fMovingSpeed), XMLoadFloat3(&m_xmf3CamPosition));
 		XMStoreFloat3(&m_xmf3CamPosition, newPos);
 	}

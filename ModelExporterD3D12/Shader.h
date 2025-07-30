@@ -5,9 +5,8 @@ public:
 	Shader();
 
 	void Create(ComPtr<ID3D12Device> pd3dDevice);
-
 	void Bind(ComPtr<ID3D12GraphicsCommandList> pd3dCommandList);
-
+	
 private:
 	void CreateRootSignature(ComPtr<ID3D12Device> pd3dDevice);
 	void CreatePipelineState(ComPtr<ID3D12Device> pd3dDevice);
@@ -19,9 +18,6 @@ private:
 
 	ComPtr<ID3DBlob> m_pVSBlob = nullptr;
 	ComPtr<ID3DBlob> m_pPSBlob = nullptr;
-
-
-
 
 };
 

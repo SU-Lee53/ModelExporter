@@ -15,7 +15,7 @@ void GameObject::ShowObjInfo()
 		ImGui::Text("Local Transform :\n%s", ::FormatMatrix(m_xmf4x4Local).c_str());
 		ImGui::Text("World Transform :\n%s", ::FormatMatrix(m_xmf4x4World).c_str());
 		
-		for (auto pMesh : m_pMeshes) {
+		for (auto pMesh : m_pMeshMaterialPairs | std::views::transform([](auto p) { return p.first; })) {
 			std::string strTreeKey2 = std::format("{} MESH", strTreeKey);
 			if (ImGui::TreeNode(strTreeKey2.c_str())) {
 				pMesh->ShowMeshInfo();
@@ -33,23 +33,19 @@ void GameObject::ShowObjInfo()
 	}
 }
 
-std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, 
+std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList,
 	std::shared_ptr<OBJECT_IMPORT_INFO> pInfo, std::shared_ptr<GameObject> m_pParent)
 {
 	std::shared_ptr<GameObject> pObj = std::make_shared<GameObject>();
 
 	// TODO : Load Mesh & Material
-	for (int i = 0; i < pInfo->meshInfos.size(); ++i) {
-		pObj->m_pMeshes.push_back(Mesh::LoadFromInfo(pd3dDevice, pd3dCommandList, pInfo->meshInfos[i]));
+	for (auto& [meshInfo, materialInfo] : pInfo->MeshMaterialInfoPairs) {
+		pObj->m_pMeshMaterialPairs.push_back(std::make_pair(Mesh::LoadFromInfo(pd3dDevice, pd3dCommandList, meshInfo), Material::LoadFromInfo(pd3dDevice, pd3dCommandList, materialInfo, pObj)));
 	}
 
 	pObj->m_strName = pInfo->strNodeName;
 	pObj->m_xmf4x4Bone = pInfo->xmf4x4Bone;
 	pObj->m_pParent = m_pParent;
-
-	for (int i = 0; i < pInfo->m_pChildren.size(); ++i) {
-		pObj->m_pChildren.push_back(LoadFromImporter(pd3dDevice, pd3dCommandList, pInfo->m_pChildren[i], pObj));
-	}
 
 	// Create CBV
 	pd3dDevice->CreateCommittedResource(
@@ -62,38 +58,87 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	);
 
 	pObj->m_pCBTransform->Map(0, NULL, reinterpret_cast<void**>(&pObj->m_pTransformMappedPtr));
-	
-	pd3dDevice->CreateCommittedResource(
-		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-		D3D12_HEAP_FLAG_NONE,
-		&CD3DX12_RESOURCE_DESC::Buffer(::AlignConstantBuffersize(sizeof(XMFLOAT4))),
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(pObj->m_pCBColor.GetAddressOf())
-	);
 
-	pObj->m_pCBColor->Map(0, NULL, reinterpret_cast<void**>(&pObj->m_pColorMappedPtr));
+	// Transform CBuffer data Heap
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc;
+	{
+		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		heapDesc.NumDescriptors = 1;
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		heapDesc.NodeMask = 0;
+	}
+	pd3dDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(pObj->m_pd3dTransformDescriptorHeap.GetAddressOf()));
+
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
+	{
+		cbvDesc.BufferLocation = pObj->m_pCBTransform->GetGPUVirtualAddress();
+		cbvDesc.SizeInBytes = ::AlignConstantBuffersize(sizeof(CB_TRANSFORM_DATA));
+	}
+	pd3dDevice->CreateConstantBufferView(&cbvDesc, pObj->m_pd3dTransformDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+	// Descriptor Heap Per Obj -> SHADER_VISIBLE
+	{
+		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		heapDesc.NumDescriptors = 1 + (Material::MATERIAL_DESCRIPTOR_COUNT_PER_DRAW * pInfo->MeshMaterialInfoPairs.size());
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		heapDesc.NodeMask = 0;
+	}
+	pd3dDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(pObj->m_pd3dDescriptorHeap.GetAddressOf()));
+
+	for (int i = 0; i < pInfo->m_pChildren.size(); ++i) {
+		pObj->m_pChildren.push_back(LoadFromImporter(pd3dDevice, pd3dCommandList, pInfo->m_pChildren[i], pObj));
+	}
 
 	return pObj;
 }
 
-void GameObject::Render(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList) 
+void GameObject::UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice)
 {
 	CB_TRANSFORM_DATA bindData;
 
 	XMStoreFloat4x4(&bindData.xmf4x4Local, XMMatrixTranspose(XMLoadFloat4x4(&ComputeLocalMatrix())));
-	//XMStoreFloat4x4(&bindData.xmf4x4Local, XMMatrixTranspose(XMLoadFloat4x4(&m_xmf4x4World)));
 	XMStoreFloat4x4(&bindData.xmf4x4World, XMMatrixTranspose(XMLoadFloat4x4(&m_xmf4x4World)));
 	::memcpy(m_pTransformMappedPtr, &bindData, sizeof(CB_TRANSFORM_DATA));
+	
+	pDevice->CopyDescriptorsSimple(
+		1,
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(m_pd3dDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), 0, D3DCore::g_nCBVSRVDescriptorIncrementSize),
+		m_pd3dTransformDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+		D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
+	);
+}
 
-	pd3dRenderCommandList->SetGraphicsRootConstantBufferView(1, m_pCBTransform->GetGPUVirtualAddress());
+void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
+{
+	pd3dRenderCommandList->SetDescriptorHeaps(1, m_pd3dDescriptorHeap.GetAddressOf());
 
-	for (auto& pMesh : m_pMeshes) {
-		pMesh->Render(pd3dRenderCommandList);
+	UpdateShaderVariables(pDevice);
+	pd3dRenderCommandList->SetGraphicsRootDescriptorTable(1, m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE MaterialCPUDescriptorHandle(m_pd3dDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), 1, D3DCore::g_nCBVSRVDescriptorIncrementSize);
+	CD3DX12_GPU_DESCRIPTOR_HANDLE MaterialGPUDescriptorHandle(m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), 1, D3DCore::g_nCBVSRVDescriptorIncrementSize);
+	for (auto&& [idx, pPairs] : m_pMeshMaterialPairs | std::views::enumerate) {
+		pPairs.second->UpdateShaderVariables(pDevice);
+
+		// 2번째 Material 이 첫번째 Material 을 덮어쓰고있음
+		// 이유는 씨발 나도 모름
+		pDevice->CopyDescriptorsSimple(
+			Material::MATERIAL_DESCRIPTOR_COUNT_PER_DRAW,
+			MaterialCPUDescriptorHandle,
+			pPairs.second->GetDescriptorHeap()->GetCPUDescriptorHandleForHeapStart(),
+			D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
+		);
+
+		pd3dRenderCommandList->SetGraphicsRootDescriptorTable(2, MaterialGPUDescriptorHandle);
+		pd3dRenderCommandList->SetGraphicsRootDescriptorTable(3, CD3DX12_GPU_DESCRIPTOR_HANDLE(MaterialGPUDescriptorHandle, 1, D3DCore::g_nCBVSRVDescriptorIncrementSize));
+		MaterialCPUDescriptorHandle.Offset(Material::MATERIAL_DESCRIPTOR_COUNT_PER_DRAW, D3DCore::g_nCBVSRVDescriptorIncrementSize);
+		MaterialGPUDescriptorHandle.Offset(Material::MATERIAL_DESCRIPTOR_COUNT_PER_DRAW, D3DCore::g_nCBVSRVDescriptorIncrementSize);
+
+		pPairs.first->Render(pd3dRenderCommandList);
 	}
 
 	for (auto& pChild : m_pChildren) {
-		pChild->Render(pd3dRenderCommandList);
+		pChild->Render(pDevice, pd3dRenderCommandList);
 	}
 
 }
