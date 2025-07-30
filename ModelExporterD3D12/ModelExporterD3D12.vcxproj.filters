@@ -22,6 +22,9 @@
     <Filter Include="소스 파일\DirectXTex">
       <UniqueIdentifier>{1d82cf85-1ffd-43c6-8389-996cfce01bb3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="소스 파일\DirectXTex\Loader">
+      <UniqueIdentifier>{881fa763-8260-4e5c-bd96-448e593958fe}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -109,10 +112,10 @@
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="DDSTextureLoader12.h">
-      <Filter>소스 파일\DirectXTex</Filter>
+      <Filter>소스 파일\DirectXTex\Loader</Filter>
     </ClInclude>
     <ClInclude Include="WICTextureLoader12.h">
-      <Filter>소스 파일\DirectXTex</Filter>
+      <Filter>소스 파일\DirectXTex\Loader</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -182,11 +185,11 @@
     <ClCompile Include="Camera.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="WICTextureLoader12.cpp">
-      <Filter>소스 파일\DirectXTex</Filter>
-    </ClCompile>
     <ClCompile Include="DDSTextureLoader12.cpp">
-      <Filter>소스 파일\DirectXTex</Filter>
+      <Filter>소스 파일\DirectXTex\Loader</Filter>
+    </ClCompile>
+    <ClCompile Include="WICTextureLoader12.cpp">
+      <Filter>소스 파일\DirectXTex\Loader</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

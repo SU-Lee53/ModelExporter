@@ -55,6 +55,12 @@
 #include <DirectXColors.h>
 #include <DirectXCollision.h>
 
+// DirectXTex
+#include "DDSTextureLoader12.h"
+#include "WICTextureLoader12.h"
+#include "../library/include/DirectXTex/DirectXTex.h"
+#include "../library/include/DirectXTex/DirectXTex.inl"
+#include <wincodec.h>
 
 using namespace DirectX;
 using namespace DirectX::PackedVector;
@@ -66,10 +72,6 @@ using namespace Microsoft::WRL;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 
-// DirectXTex
-#include "DDSTextureLoader12.h"
-#include "WICTextureLoader12.h"
-
 // ImGUI
 #include "../ImGui/imgui.h"
 #include "../ImGui/imgui_impl_win32.h"
@@ -77,18 +79,21 @@ using namespace Microsoft::WRL;
 #include "../ImGui/imgui_stdlib.h"
 
 // Assimp
-#if defined(_DEBUG)
-#pragma comment(lib,  "../library/lib/assimp/x64/assimp-vc143-mtd.lib")
-#else
-#pragma comment(lib,  "../library/lib/assimp/x64/assimp-vc143-mt.lib")
-#endif
-
 #include "../library/include/assimp/Importer.hpp"
 #include "../library/include/assimp/scene.h"
 #include "../library/include/assimp/postprocess.h"
 #include "../library/include/assimp/DefaultLogger.hpp"
 #include "../library/include/assimp/importerdesc.h"
 #include "../library/include/assimp/pbrmaterial.h"
+
+// lib link
+#if defined(_DEBUG)
+#pragma comment(lib, "../library/lib/DirectXTex/Debug/DirectXTex.lib")
+#pragma comment(lib, "../library/lib/assimp/x64/assimp-vc143-mtd.lib")
+#else
+#pragma comment(lib, "../library/lib/DirectXTex/Release/DirectXTex.lib")
+#pragma comment(lib, "../library/lib/assimp/x64/assimp-vc143-mt.lib")
+#endif
 
 // Additional Helper Headers
 #include "Defines.h"

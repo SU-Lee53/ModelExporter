@@ -32,7 +32,6 @@ private:
 	void PrintMaterial(const aiMaterial& material);
 
 private:
-private:
 	std::string FormatMetaData(const aiMetadata& metaData, size_t idx);
 	std::string QuaryAndFormatMaterialData(const aiMaterial& material, const aiMaterialProperty& matProperty);
 
@@ -47,6 +46,11 @@ private:
 private:
 	MESH_IMPORT_INFO LoadMeshData(const aiMesh& node);
 	MATERIAL_IMPORT_INFO LoadMaterialData(const aiMaterial& node);
+
+	void ExportTexture(const aiTexture& texture);
+	HRESULT ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture);
+	HRESULT ExportWICFile(std::wstring_view wsvSavePath, const aiTexture& texture);
+	void GetContainerFormat(std::wstring_view wsvSaveName, GUID& formatGUID);
 
 private:
 	bool m_bLoaded = false;

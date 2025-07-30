@@ -26,8 +26,11 @@ void AssimpImporter::LoadFBXFilesFromPath(std::string_view svPath)
 	m_strCurrentPath = std::string{ svPath };
 	fs::path currentPath{ m_strCurrentPath };
 	if (!fs::exists(currentPath)) {
-		__debugbreak();
+		m_strError = "Path doesn't exist!";
+		return;
 	}
+
+	m_strError.clear();
 
 	std::string strExtentionList;
 	m_pImporter->GetExtensionList(strExtentionList);
@@ -752,12 +755,219 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 	return info;
 }
 
-MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& node)
+MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& material)
 {
-	MATERIAL_IMPORT_INFO info;
-	//info.data = rand();
+	MATERIAL_IMPORT_INFO info{};
+
+	aiColor4D aicValue{};
+	if (material.Get(AI_MATKEY_COLOR_DIFFUSE, aicValue) == AI_SUCCESS) {
+		info.xmf4AlbedoColor = XMFLOAT4(&aicValue.r);
+	}
+
+	if (material.Get(AI_MATKEY_COLOR_AMBIENT, aicValue) == AI_SUCCESS) {
+		info.xmf4AmbientColor = XMFLOAT4(&aicValue.r);
+	}
+
+	if (material.Get(AI_MATKEY_COLOR_SPECULAR, aicValue) == AI_SUCCESS) {
+		info.xmf4SpecularColor = XMFLOAT4(&aicValue.r);
+	}
+
+	if (material.Get(AI_MATKEY_COLOR_EMISSIVE, aicValue) == AI_SUCCESS) {
+		info.xmf4EmissiveColor = XMFLOAT4(&aicValue.r);
+	}
+
+	float fValue{};
+	if (material.Get(AI_MATKEY_SHININESS, fValue) == AI_SUCCESS) {
+		info.fGlossiness = fValue;
+	}
+
+	if (material.Get(AI_MATKEY_ROUGHNESS_FACTOR, fValue) == AI_SUCCESS) {
+		info.fSmoothness = 1 - fValue;
+	}
+
+	if (material.Get(AI_MATKEY_METALLIC_FACTOR, fValue) == AI_SUCCESS) {
+		info.fMetallic = fValue;
+	}
+
+	if (material.Get(AI_MATKEY_REFLECTIVITY, fValue) == AI_SUCCESS) {
+		info.fGlossyReflection = fValue;
+	}
+
+	// Texture?
+
+	std::vector<aiTextureType> textureTypes = {
+		aiTextureType_DIFFUSE,
+		aiTextureType_SPECULAR,
+		aiTextureType_METALNESS,
+		aiTextureType_NORMALS,
+	};
+
+	aiString aistrTexturePath{};
+	for (aiTextureType tType : textureTypes) {
+		UINT nTextures = material.GetTextureCount(tType);
+		for (int i = 0; i < nTextures; ++i) {
+			if (material.GetTexture(tType, i, &aistrTexturePath) == AI_SUCCESS) {
+				const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+				if (pEmbeddedTexture) {
+					ExportTexture(*pEmbeddedTexture);
+				}
+			}
+		}
+	}
 
 	return info;
+}
+
+void AssimpImporter::ExportTexture(const aiTexture& texture)
+{
+	fs::path curPath{ m_strPath };
+	std::string strTextureExportPath = std::format("{}/{} Textures", m_strCurrentPath, curPath.stem().string());
+
+	fs::path pathFromEmbeddedTexture{ texture.mFilename.C_Str() };
+	fs::path exportDirectoryPath{ strTextureExportPath };
+	fs::path savePath{ std::format("{}/{}", exportDirectoryPath.string(), pathFromEmbeddedTexture.filename().string()) };
+
+	if (fs::exists(savePath)) {
+		return;
+	}
+
+	if (!fs::exists(exportDirectoryPath)) {
+		try {
+			fs::create_directories(exportDirectoryPath);
+		}
+		catch (const std::exception& e) {
+			SHOW_ERROR(e.what());
+		}
+	}
+
+	if (curPath.extension().string() == ".dds") {
+		ExportDDSFile(savePath.wstring(), texture);
+	}
+	else {
+		ExportWICFile(savePath.wstring(), texture);
+	}
+
+}
+
+HRESULT AssimpImporter::ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture)
+{
+	DirectX::ScratchImage scratchImg{};
+	DirectX::TexMetadata  metaData{};
+
+	// mHeight == 0 인 경우 압축된 데이터임
+	if (texture.mHeight == 0) {
+		HRESULT hr = ::LoadFromDDSMemory(
+			reinterpret_cast<const uint8_t*>(texture.pcData),
+			(size_t)texture.mWidth,
+			DDS_FLAGS_NONE,
+			&metaData,
+			scratchImg
+		);
+
+		if (FAILED(hr)) {
+			__debugbreak();
+			return S_FALSE;
+		}
+	}
+	else {
+		DirectX::Image img{};
+		img.width = texture.mWidth;
+		img.height = texture.mHeight;
+		img.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		img.rowPitch = size_t(texture.mWidth) * 4;
+		img.slicePitch = img.rowPitch * texture.mHeight;
+		img.pixels = const_cast<uint8_t*>(
+			reinterpret_cast<const uint8_t*>(texture.pcData));
+
+		scratchImg.Initialize2D(img.format, img.width, img.height, 1, 1);
+		memcpy(scratchImg.GetPixels(), img.pixels, img.slicePitch);
+		metaData = scratchImg.GetMetadata();
+	}
+
+	GUID containerFormat;
+	GetContainerFormat(wsvSavePath, containerFormat);
+
+	return ::SaveToDDSFile(
+		scratchImg.GetImages(),
+		scratchImg.GetImageCount(),
+		scratchImg.GetMetadata(),
+		DirectX::DDS_FLAGS_NONE,
+		wsvSavePath.data()
+	);
+}
+
+HRESULT AssimpImporter::ExportWICFile(std::wstring_view wsvSavePath, const aiTexture& texture)
+{
+	DirectX::ScratchImage scratchImg{};
+
+	// mHeight == 0 인 경우 압축된 데이터임
+	if (texture.mHeight == 0) {
+		HRESULT hr = ::LoadFromWICMemory(
+			reinterpret_cast<const uint8_t*>(texture.pcData),
+			(size_t)texture.mWidth,
+			::WIC_FLAGS_NONE,
+			nullptr,
+			scratchImg,
+			nullptr
+		);
+
+		if (FAILED(hr)) {
+			__debugbreak();
+			return S_FALSE;
+		}
+	}
+	else {
+		DirectX::Image img = {};
+		img.width = texture.mWidth;
+		img.height = texture.mHeight;
+		img.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		img.rowPitch = size_t(texture.mWidth * 4);
+		img.slicePitch = img.rowPitch * texture.mHeight;
+		img.pixels = reinterpret_cast<uint8_t*>(texture.pcData);
+
+		scratchImg.Initialize2D(img.format, img.width, img.height, 1, 1);
+		memcpy(scratchImg.GetPixels(), img.pixels, img.slicePitch);
+	}
+
+	GUID containerFormat;
+	GetContainerFormat(wsvSavePath, containerFormat);
+
+	return ::SaveToWICFile(
+		scratchImg.GetImages(),
+		scratchImg.GetImageCount(),
+		DirectX::WIC_FLAGS_NONE,
+		containerFormat,
+		wsvSavePath.data()
+	);
+
+}
+
+void AssimpImporter::GetContainerFormat(std::wstring_view wsvSaveName, GUID& formatGUID)
+{
+	fs::path savePath{ wsvSaveName };
+	std::string format = savePath.extension().string();
+
+	if (format == ".png") {
+		formatGUID = GUID_ContainerFormatPng;
+	}
+	else if (format == ".jpg" || format == ".jpeg") {
+		formatGUID = GUID_ContainerFormatJpeg;
+	}
+	else if (format == ".bmp") {
+		formatGUID = GUID_ContainerFormatBmp;
+	}
+	else if (format == ".tif" || format == ".tiff") {
+		formatGUID = GUID_ContainerFormatTiff;
+	}
+	else if (format == ".gif") {
+		formatGUID = GUID_ContainerFormatGif;
+	}
+	else if (format == ".wmp") {
+		formatGUID = GUID_ContainerFormatWmp;
+	}
+	else if (format == ".heif") {
+		formatGUID = GUID_ContainerFormatHeif;
+	}
 }
 
 void AssimpImporter::PrintTabs()
