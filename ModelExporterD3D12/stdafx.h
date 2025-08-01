@@ -32,7 +32,6 @@
 #include <utility>
 #include <print>
 #include <filesystem>
-#include <algorithm>
 
 
 // Direct3D related headers

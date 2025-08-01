@@ -1,11 +1,13 @@
 #pragma once
 #include "Mesh.h"
 #include "Material.h"
+#include "Bone.h"
 
 struct OBJECT_IMPORT_INFO {
 	std::string strNodeName;
 
 	std::vector<std::pair<MESH_IMPORT_INFO, MATERIAL_IMPORT_INFO>> MeshMaterialInfoPairs;
+	BONE_IMPORT_INFO boneInfo;
 
 	XMFLOAT4X4 xmf4x4Bone;
 
@@ -36,10 +38,12 @@ public:
 
 private:
 	std::vector<std::pair<std::shared_ptr<Mesh>, std::shared_ptr<Material>>> m_pMeshMaterialPairs;
-	std::string m_strName = "";
+	std::shared_ptr<Bone> m_pBone;
 
+	std::string m_strName;
+
+	XMFLOAT4X4 m_xmf4x4Transform;
 	XMFLOAT4X4 m_xmf4x4Local;
-	XMFLOAT4X4 m_xmf4x4Bone;
 	XMFLOAT4X4 m_xmf4x4World;
 
 	ComPtr<ID3D12Resource> m_pCBTransform = nullptr;

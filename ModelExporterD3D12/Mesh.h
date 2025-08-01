@@ -21,6 +21,30 @@ private:
 
 };
 
+struct BlendedVertexType {
+	XMFLOAT3	xmf3Position;
+	XMFLOAT3	xmf3Normal;
+	XMFLOAT3	xmf3Tangent;
+	XMFLOAT3	xmf3BiTangent;
+
+	XMFLOAT4	xmf4Color[8];
+	XMFLOAT2	xmf2TexCoords[8];
+
+	XMINT4		boneIndices;
+	XMFLOAT4	boneWeights;
+
+	static D3D12_INPUT_LAYOUT_DESC GetInputLayout() {
+		return {
+			BlendedVertexType::inputElements.data(),
+			(UINT)BlendedVertexType::inputElements.size()
+		};
+	}
+
+private:
+	static std::vector<D3D12_INPUT_ELEMENT_DESC> inputElements;
+
+};
+
 struct MESH_IMPORT_INFO {
 	std::string strMeshName;
 
@@ -32,6 +56,8 @@ struct MESH_IMPORT_INFO {
 	std::vector<UINT>						uiIndices;
 	std::array<std::vector<XMFLOAT2>, 8>	xmf2TexCoords;
 };
+
+// TODO : 일어나서 할일 - BlendedVertexType 에 대한 Mesh를 만들고 애니메이션 존재 여부에 따라 분리시켜 로딩하여 렌더링
 
 class Mesh {
 public:

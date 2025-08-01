@@ -60,20 +60,20 @@ void Camera::Update()
 void Camera::ProcessInput()
 {
 	// Key
-	if (INPUT->GetButtonPressed(VK_UP)) {
+	if (INPUT->GetButtonPressed('W')) {
 		XMVECTOR newPos = XMVectorMultiplyAdd(XMLoadFloat3(&m_xmf3Look), XMVectorReplicate(m_fMovingSpeed), XMLoadFloat3(&m_xmf3CamPosition));
 		XMStoreFloat3(&m_xmf3CamPosition, newPos);
 	}
-	if (INPUT->GetButtonPressed(VK_DOWN)) {
+	if (INPUT->GetButtonPressed('S')) {
 		XMVECTOR newPos = XMVectorMultiplyAdd(XMLoadFloat3(&m_xmf3Look), XMVectorReplicate(-m_fMovingSpeed), XMLoadFloat3(&m_xmf3CamPosition));
 		XMStoreFloat3(&m_xmf3CamPosition, newPos);
 	}
 
-	if (INPUT->GetButtonPressed(VK_LEFT)) {
+	if (INPUT->GetButtonPressed('A')) {
 		XMVECTOR newPos = XMVectorMultiplyAdd(XMLoadFloat3(&m_xmf3Right), XMVectorReplicate(-m_fMovingSpeed), XMLoadFloat3(&m_xmf3CamPosition));
 		XMStoreFloat3(&m_xmf3CamPosition, newPos);
 	}
-	if (INPUT->GetButtonPressed(VK_RIGHT)) {
+	if (INPUT->GetButtonPressed('D')) {
 		XMVECTOR newPos = XMVectorMultiplyAdd(XMLoadFloat3(&m_xmf3Right), XMVectorReplicate(m_fMovingSpeed), XMLoadFloat3(&m_xmf3CamPosition));
 		XMStoreFloat3(&m_xmf3CamPosition, newPos);
 	}

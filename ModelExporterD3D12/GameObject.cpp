@@ -25,7 +25,7 @@ void GameObject::ShowObjInfo()
 
 		ImGui::SeparatorText("Children");
 
-		for (auto pChild : m_pChildren) {
+		for (auto& pChild : m_pChildren) {
 			pChild->ShowObjInfo();
 		}
 
@@ -38,13 +38,14 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 {
 	std::shared_ptr<GameObject> pObj = std::make_shared<GameObject>();
 
+	pObj->m_pMeshMaterialPairs.reserve(pInfo->MeshMaterialInfoPairs.size());
 	// TODO : Load Mesh & Material
 	for (auto& [meshInfo, materialInfo] : pInfo->MeshMaterialInfoPairs) {
-		pObj->m_pMeshMaterialPairs.push_back(std::make_pair(Mesh::LoadFromInfo(pd3dDevice, pd3dCommandList, meshInfo), Material::LoadFromInfo(pd3dDevice, pd3dCommandList, materialInfo, pObj)));
+		pObj->m_pMeshMaterialPairs.emplace_back(Mesh::LoadFromInfo(pd3dDevice, pd3dCommandList, meshInfo), Material::LoadFromInfo(pd3dDevice, pd3dCommandList, materialInfo, pObj));
 	}
 
 	pObj->m_strName = pInfo->strNodeName;
-	pObj->m_xmf4x4Bone = pInfo->xmf4x4Bone;
+	pObj->m_xmf4x4Transform = pInfo->xmf4x4Bone;
 	pObj->m_pParent = m_pParent;
 
 	// Create CBV
@@ -89,6 +90,10 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 		pObj->m_pChildren.push_back(LoadFromImporter(pd3dDevice, pd3dCommandList, pInfo->m_pChildren[i], pObj));
 	}
 
+	// Bone
+	pObj->m_pBone = Bone::LoadFromInfo(pInfo->boneInfo);
+
+
 	return pObj;
 }
 
@@ -120,8 +125,6 @@ void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCom
 	for (auto&& [idx, pPairs] : m_pMeshMaterialPairs | std::views::enumerate) {
 		pPairs.second->UpdateShaderVariables(pDevice);
 
-		// 2번째 Material 이 첫번째 Material 을 덮어쓰고있음
-		// 이유는 씨발 나도 모름
 		pDevice->CopyDescriptorsSimple(
 			Material::MATERIAL_DESCRIPTOR_COUNT_PER_DRAW,
 			MaterialCPUDescriptorHandle,
@@ -147,13 +150,13 @@ void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCom
 XMFLOAT4X4 GameObject::ComputeLocalMatrix()
 {
 	//  ????
-	XMMATRIX xmmtxResult = XMLoadFloat4x4(&m_xmf4x4Bone);
+	XMMATRIX xmmtxResult = XMLoadFloat4x4(&m_xmf4x4Transform);
 
 	//assert(XMMatrixIsIdentity(xmmtxResult));
 
 	std::shared_ptr<GameObject> pParent = m_pParent.lock();
 	while (pParent != nullptr) {
-		xmmtxResult = XMMatrixMultiply(XMLoadFloat4x4(&pParent->m_xmf4x4Bone), xmmtxResult);
+		xmmtxResult = XMMatrixMultiply(XMLoadFloat4x4(&pParent->m_xmf4x4Transform), xmmtxResult);
 		pParent = pParent->m_pParent.lock();
 	}
 

@@ -14,7 +14,7 @@ public:
 	void Run();
 	void RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
 
-	std::shared_ptr<Shader> GetShader() { return m_upShader; }
+	std::shared_ptr<Shader> GetShader() { return m_pShaders[m_eShaderType]; }
 
 private:
 	void ShowSceneAttribute();
@@ -29,11 +29,16 @@ private:
 
 private:
 	void ShowNode(const aiNode& node);
-	void PrintMatrix(const aiMatrix4x4& aimtx);
 	void PrintMesh(const aiMesh& mesh);
+	void PrintBone(const aiBone& bone);
 	void PrintMaterial(const aiMaterial& material);
+	void PrintAnimation(const aiAnimation& animation);
+	void PrintAnimationNode(const aiNodeAnim& node);
+	void PrintMeshAnimation(const aiMeshAnim& mesh);
+	void PrintMeshMorphAnimation(const aiMeshMorphAnim& meshMorphAnim);
 
 private:
+	void PrintMatrix(const aiMatrix4x4& aimtx);
 	std::string FormatMetaData(const aiMetadata& metaData, size_t idx);
 	std::string QuaryAndFormatMaterialData(const aiMaterial& material, const aiMaterialProperty& matProperty);
 
@@ -48,6 +53,7 @@ private:
 private:
 	MESH_IMPORT_INFO LoadMeshData(const aiMesh& node);
 	MATERIAL_IMPORT_INFO LoadMaterialData(const aiMaterial& node);
+	BONE_IMPORT_INFO LoadBoneData(const aiBone& bone);
 
 	std::string ExportTexture(const aiTexture& texture);
 	HRESULT ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture);
@@ -63,6 +69,7 @@ private:
 	std::shared_ptr<Assimp::Importer> m_pImporter = nullptr;
 	const aiScene* m_rpScene = nullptr;
 	aiNode* m_rpRootNode = nullptr;
+	UINT m_nNodes = 0;
 
 private:
 	std::string m_strCurrentPath = "";
@@ -86,6 +93,8 @@ private:
 	UINT64					m_nFenceValue = 0;
 
 private:
-	std::shared_ptr<Shader> m_upShader = nullptr;
+	std::array<std::shared_ptr<Shader>, SHADER_TYPE_COUNT> m_pShaders = {};
+	SHADER_TYPE m_eShaderType = SHADER_TYPE_DIFFUSED;
+
 	std::shared_ptr<Camera> m_upCamera = nullptr;
 };

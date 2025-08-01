@@ -13,8 +13,11 @@ AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
 
 	m_pImporter = make_shared<Assimp::Importer>();
 
-	m_upShader = std::make_unique<Shader>();
-	m_upShader->Create(m_pd3dDevice);
+	m_pShaders[SHADER_TYPE_DIFFUSED] = std::make_shared<DiffusedShader>();
+	m_pShaders[SHADER_TYPE_ALBEDO] = std::make_shared<AlbedoShader>();
+
+	m_pShaders[SHADER_TYPE_DIFFUSED]->Create(m_pd3dDevice);
+	m_pShaders[SHADER_TYPE_ALBEDO]->Create(m_pd3dDevice);
 
 	m_upCamera = make_unique<Camera>(pDevice);
 }
@@ -56,6 +59,17 @@ void AssimpImporter::LoadFBXFilesFromPath(std::string_view svPath)
 
 }
 
+unsigned int CountNodes(const aiNode* node) {
+	if (!node)
+		return 0;
+
+	unsigned int count = 1;  // 이 노드 자신
+	for (unsigned int i = 0; i < node->mNumChildren; ++i) {
+		count += CountNodes(node->mChildren[i]);
+	}
+	return count;
+}
+
 bool AssimpImporter::LoadModel(std::string_view svPath)
 {
 	fs::path modelPath = svPath;
@@ -75,7 +89,8 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 		aiProcess_Triangulate |
 		aiProcess_GenUVCoords |
 		aiProcess_GenNormals |
-		aiProcess_CalcTangentSpace
+		aiProcess_CalcTangentSpace |
+		aiProcess_PopulateArmatureData
 	);
 
 	if (!m_rpScene) {
@@ -90,6 +105,8 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 	m_bLoaded = true;
 	m_strPath = svPath;
 	m_rpRootNode = m_rpScene->mRootNode;
+
+	m_nNodes = CountNodes(m_rpRootNode);
 
 	// Init Model
 	auto p = LoadObject(*m_rpRootNode, nullptr);
@@ -115,6 +132,15 @@ void AssimpImporter::Run()
 	if (m_bLoaded) {
 		ImGui::Text("Loaded Model Path : %s", m_strPath.c_str());
 	}
+
+	if (ImGui::Button("DIFFUSED")) {
+		m_eShaderType = SHADER_TYPE_DIFFUSED;
+	}
+
+	if (ImGui::Button("ALBEDO")) {
+		m_eShaderType = SHADER_TYPE_ALBEDO;
+	}
+
 
 	if (ImGui::BeginListBox(("LoadTargets"))) {
 		for (int i = 0; i < m_strFBXFilesFromPath.size(); ++i) {
@@ -186,7 +212,7 @@ void AssimpImporter::Run()
 void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
 {
 	if (m_pLoadedObject) {
-		m_upShader->Bind(pd3dRenderCommandList);
+		m_pShaders[m_eShaderType]->Bind(pd3dRenderCommandList);
 
 		m_upCamera->BindViewportAndScissorRects(pd3dRenderCommandList);
 		m_upCamera->UpdateShaderVariables(pd3dRenderCommandList, 0);
@@ -201,9 +227,12 @@ void AssimpImporter::ShowSceneAttribute()
 	if (ImGui::TreeNode("Anim", "Has Animations ? : % s", m_rpScene->HasAnimations() ? "YES" : "NO")) {
 		if (m_rpScene->HasAnimations()) {
 			for (int i = 0; i < m_rpScene->mNumAnimations; ++i) {
-				ImGui::Text("Anim Name : %s", m_rpScene->mAnimations[i]->mName.C_Str());
-				ImGui::Text("Anim Duration : %f", m_rpScene->mAnimations[i]->mDuration);
-				ImGui::Text("Anim TicksPerSecond : %f", m_rpScene->mAnimations[i]->mTicksPerSecond);
+				aiAnimation* anim = m_rpScene->mAnimations[i];
+				std::string strTreeKey = std::format("{}", anim->mName.C_Str());
+				if (ImGui::TreeNode(strTreeKey.c_str())) {
+					PrintAnimation(*anim);
+					ImGui::TreePop();
+				}
 				ImGui::Separator();
 			}
 		}
@@ -278,6 +307,7 @@ void AssimpImporter::ShowSceneAttribute()
 		ImGui::TreePop();
 	}
 
+	ImGui::Text("%s", std::format("Has Skeletons : {}", m_rpScene->hasSkeletons()).c_str());
 
 }
 
@@ -328,6 +358,7 @@ std::string AssimpImporter::QuaryAndFormatMaterialData(const aiMaterial& materia
 
 void AssimpImporter::ShowNodeAll()
 {
+	ImGui::Text("Node Count : %u", m_nNodes);
 	ShowNode(*m_rpRootNode);
 }
 
@@ -374,9 +405,10 @@ void AssimpImporter::ShowNode(const aiNode& node)
 			ShowNode(*node.mChildren[i]);
 		}
 		
+		ImGui::Separator();
+
 		ImGui::TreePop();
 	}
-
 
 }
 
@@ -394,15 +426,15 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 {
 	ImGui::Text("Mesh Name : %s", mesh.mName.C_Str());
 	ImGui::Text("NumAnimMeshes : %u", mesh.mNumAnimMeshes);
+
 	if (ImGui::TreeNode("Bone", "HasBones : %s ", mesh.HasBones() ? "YES" : "NO")) {
 		if (mesh.HasBones()) {
+			ImGui::Text("Bone Count : %u", mesh.mNumBones);
 			for (int j = 0; j < mesh.mNumBones; ++j) {
 				aiBone* bone = mesh.mBones[j];
-				std::string strTreeKey2 = std::format("{} #{} - {} - NumWeights : {}", "Bone", j, bone->mName.C_Str(), bone->mNumWeights);
-				if (ImGui::TreeNode(strTreeKey2.c_str())) {
-					for (int k = 0; k < bone->mNumWeights; ++k) {
-						ImGui::Text("Weight #%d : %f", k, bone->mWeights->mWeight);
-					}
+				if(ImGui::TreeNode(std::format("{}", bone->mName.C_Str()).c_str())) {
+					PrintBone(*bone);
+
 					ImGui::TreePop();
 				}
 			}
@@ -517,6 +549,36 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 		PrintMaterial(*pMaterial);
 		ImGui::TreePop();
 	}
+
+}
+
+void AssimpImporter::PrintBone(const aiBone& bone)
+{
+	ImGui::Text("Bone Name : %s", bone.mName.C_Str());
+
+
+	if (ImGui::TreeNode(std::format("{} - Node", bone.mName.C_Str()).c_str())) {
+		if (bone.mNode) {
+			ShowNode(*bone.mNode);
+		}
+
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode(std::format("NumWeights : {}", bone.mNumWeights).c_str())) {
+		for (int i = 0; i < bone.mNumWeights; ++i) {
+			ImGui::Text("Weight #%d : ", i);
+			ImGui::SameLine();
+			aiVertexWeight weight = bone.mWeights[i];
+			ImGui::Text("VertexID : %u - Weight : %f", weight.mVertexId, weight.mWeight);
+		}
+
+		ImGui::TreePop();
+	}
+
+	ImGui::Text("OffsetMatrix : ");
+	ImGui::Text("%s", ::FormatMatrix(bone.mOffsetMatrix).c_str());
+
 }
 
 void AssimpImporter::PrintMaterial(const aiMaterial& material)
@@ -599,6 +661,137 @@ void AssimpImporter::PrintMaterial(const aiMaterial& material)
 		ImGui::TreePop();
 	}
 
+}
+
+void AssimpImporter::PrintAnimation(const aiAnimation& animation)
+{
+	ImGui::Text("Anim Name : %s", animation.mName.C_Str());
+	ImGui::Text("Anim Duration : %f", animation.mDuration);
+	ImGui::Text("Anim TicksPerSecond : %f", animation.mTicksPerSecond);
+
+	std::string strTreeKey1 = std::format("{} - Channels Count : {}", animation.mName.C_Str(), animation.mNumChannels);
+	if (ImGui::TreeNode(strTreeKey1.c_str())) {
+		for (int i = 0; i < animation.mNumChannels; ++i) {
+			std::string strTreeKey2 = std::format("Channel #{}", i);
+			if(ImGui::TreeNode(strTreeKey2.c_str())) {
+				aiNodeAnim* node = animation.mChannels[i];
+				PrintAnimationNode(*node);
+
+				ImGui::TreePop();
+			}
+		}
+
+		ImGui::TreePop();
+	}
+
+	strTreeKey1 = std::format("{} - Mesh Channels Count : {}", animation.mName.C_Str(), animation.mNumMeshChannels);
+	if (ImGui::TreeNode(strTreeKey1.c_str())) {
+		for (int i = 0; i < animation.mNumMeshChannels; ++i) {
+			std::string strTreeKey2 = std::format("Mesh Channel #{}", i);
+			if (ImGui::TreeNode(strTreeKey2.c_str())) {
+				aiMeshAnim* animMesh = animation.mMeshChannels[i];
+				PrintMeshAnimation(*animMesh);
+
+				ImGui::TreePop();
+			}
+		}
+
+		ImGui::TreePop();
+	}
+
+	strTreeKey1 = std::format("{} - Morph Mesh Channels Count : {}", animation.mName.C_Str(), animation.mNumMorphMeshChannels);
+	if (ImGui::TreeNode(strTreeKey1.c_str())) {
+		for (int i = 0; i < animation.mNumMorphMeshChannels; ++i) {
+			std::string strTreeKey2 = std::format("Morph Mesh Channel #{}", i);
+			if (ImGui::TreeNode(strTreeKey2.c_str())) {
+				aiMeshMorphAnim* meshMorph = animation.mMorphMeshChannels[i];
+				PrintMeshMorphAnimation(*meshMorph);
+
+				ImGui::TreePop();
+			}
+		}
+		animation.mMorphMeshChannels;
+
+		ImGui::TreePop();
+	}
+
+
+}
+
+void AssimpImporter::PrintAnimationNode(const aiNodeAnim& node)
+{
+	ImGui::Text("Name : %s", node.mNodeName.C_Str());
+
+	if (ImGui::TreeNode(std::format("NumPositionKeys : {}", node.mNumPositionKeys).c_str())) {
+		for (int i = 0; i < node.mNumPositionKeys; ++i) {
+			if (ImGui::TreeNode(std::format("Position Key #{}", i).c_str())) {
+				aiVectorKey posKey = node.mPositionKeys[i];
+				ImGui::Text("Time : %lf", posKey.mTime);
+				ImGui::Text("Value : %s", std::format("{{{: 5.3f}, {: 5.3f}, {: 5.3f} }}", posKey.mValue.x, posKey.mValue.y, posKey.mValue.z).c_str());
+
+				ImGui::TreePop();
+			}
+		}
+
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode(std::format("NumRotationKeys : {}", node.mNumRotationKeys).c_str())) {
+		for (int i = 0; i < node.mNumRotationKeys; ++i) {
+			if (ImGui::TreeNode(std::format("Position Key #{}", i).c_str())) {
+				aiQuatKey quatKey = node.mRotationKeys[i];
+				ImGui::Text("Time : %lf", quatKey.mTime);
+				ImGui::Text("Value : %s", std::format("{{{: 5.3f}, {: 5.3f}, {: 5.3f}, {: 5.3f} }}", quatKey.mValue.x, quatKey.mValue.y, quatKey.mValue.z, quatKey.mValue.w).c_str());
+
+				ImGui::TreePop();
+			}
+		}
+
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode(std::format("NumScalingKeys : {}", node.mNumScalingKeys).c_str())) {
+		for (int i = 0; i < node.mNumScalingKeys; ++i) {
+			if (ImGui::TreeNode(std::format("Position Key #{}", i).c_str())) {
+				aiVectorKey scaleKey = node.mScalingKeys[i];
+				ImGui::Text("Time : %lf", scaleKey.mTime);
+				ImGui::Text("Value : %s", std::format("{{{: 5.3f}, {: 5.3f}, {: 5.3f} }}", scaleKey.mValue.x, scaleKey.mValue.y, scaleKey.mValue.z).c_str());
+
+				ImGui::TreePop();
+			}
+		}
+
+		ImGui::TreePop();
+	}
+
+}
+
+void AssimpImporter::PrintMeshAnimation(const aiMeshAnim& mesh)
+{
+	ImGui::Text("Name : %s", mesh.mName.C_Str());
+
+	for (int i = 0; i < mesh.mNumKeys; ++i) {
+		aiMeshKey meshKey = mesh.mKeys[i];
+		ImGui::Text("Time : %lf", meshKey.mTime);
+		ImGui::Text("Value(index of aiMesh's AnimMesh) : %u", meshKey.mValue);
+	}
+}
+
+void AssimpImporter::PrintMeshMorphAnimation(const aiMeshMorphAnim& meshMorphAnim)
+{
+	ImGui::Text("Name : %s", meshMorphAnim.mName.C_Str());
+	for (int i = 0; i < meshMorphAnim.mNumKeys; ++i) {
+		aiMeshMorphKey meshMorphKey = meshMorphAnim.mKeys[i];
+		ImGui::Text("Time : %lf", meshMorphKey.mTime);
+		for (int j = 0; j < meshMorphKey.mNumValuesAndWeights; ++j) {
+			if (ImGui::TreeNode(std::format("Key #{}", j).c_str())) {
+				ImGui::Text("Value : %u", meshMorphKey.mValues[j]);
+				ImGui::Text("Value : %lf", meshMorphKey.mWeights[j]);
+
+				ImGui::TreePop();
+			}
+		}
+	}
 }
 
 std::string AssimpImporter::FormatMetaData(const aiMetadata& metaData, size_t idx)
@@ -690,6 +883,7 @@ std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& nod
 	for (int i = 0; i < node.mNumMeshes; ++i) {
 		aiMesh* pMesh = m_rpScene->mMeshes[node.mMeshes[i]];
 		pObjInfo->MeshMaterialInfoPairs.push_back(std::make_pair( LoadMeshData(*pMesh), LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]) ));
+		//pObjInfo->boneInfo = pMesh->
 	}
 
 	for (int i = 0; i < node.mNumChildren; ++i) {
@@ -853,19 +1047,12 @@ MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& material
 		}
 	}
 
-	/*
-	for (aiTextureType tType : textureTypes) {
-		UINT nTextures = material.GetTextureCount(tType);
-		for (int i = 0; i < nTextures; ++i) {
-			if (material.GetTexture(tType, i, &aistrTexturePath) == AI_SUCCESS) {
-				const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
-				if (pEmbeddedTexture) {
-					ExportTexture(*pEmbeddedTexture);
-				}
-			}
-		}
-	}
-	*/
+	return info;
+}
+
+BONE_IMPORT_INFO AssimpImporter::LoadBoneData(const aiBone& bone)
+{
+	BONE_IMPORT_INFO info;
 
 	return info;
 }

@@ -71,10 +71,20 @@ VS_OUTPUT VSMain(VS_INPUT input)
     return output;
 }
 
-float4 PSMain(VS_OUTPUT input) : SV_TARGET
+// ====================
+// Diffused PS
+// ====================
+float4 PSDiffused(VS_OUTPUT input) : SV_TARGET
 {
     float4 texColor = texAlbedo.Sample(samplerDiffuse, input.TexCoord);
-    //texColor += (f4AlbedoColor + f4SpecularColor + f4AmbientColor + f4EmissiveColor);
     float4 f4Color = (f4AlbedoColor + f4SpecularColor + f4AmbientColor + f4EmissiveColor);
     return texColor;
+}
+
+// ====================
+// Albedo PS
+// ====================
+float4 PSAlbedo(VS_OUTPUT input) : SV_TARGET
+{
+    return f4AlbedoColor;
 }
