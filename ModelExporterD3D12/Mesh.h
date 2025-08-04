@@ -30,8 +30,8 @@ struct BlendedVertexType {
 	XMFLOAT4	xmf4Color[8];
 	XMFLOAT2	xmf2TexCoords[8];
 
-	XMINT4		boneIndices;
-	XMFLOAT4	boneWeights;
+	int			boneIndices[4];
+	float		boneWeights[4];
 
 	static D3D12_INPUT_LAYOUT_DESC GetInputLayout() {
 		return {
@@ -55,6 +55,11 @@ struct MESH_IMPORT_INFO {
 	std::array<std::vector<XMFLOAT4>, 8>	xmf4Colors;
 	std::vector<UINT>						uiIndices;
 	std::array<std::vector<XMFLOAT2>, 8>	xmf2TexCoords;
+
+
+	std::vector<std::array<int, 4>>			blendIndices;
+	std::vector<std::array<float, 4>>		blendWeights;
+
 };
 
 // TODO : 일어나서 할일 - BlendedVertexType 에 대한 Mesh를 만들고 애니메이션 존재 여부에 따라 분리시켜 로딩하여 렌더링
