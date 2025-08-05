@@ -9,34 +9,13 @@ struct VertexType {
 	XMFLOAT4	xmf4Color[8];
 	XMFLOAT2	xmf2TexCoords[8];
 
+	int			blendIndices[4] = { 0, 0, 0, 0 };
+	float		blendWeights[4] = { 0.f, 0.f, 0.f, 0.f };
+
 	static D3D12_INPUT_LAYOUT_DESC GetInputLayout() {
 		return {
 			VertexType::inputElements.data(),
 			(UINT)VertexType::inputElements.size()
-		};
-	}
-
-private:
-	static std::vector<D3D12_INPUT_ELEMENT_DESC> inputElements;
-
-};
-
-struct BlendedVertexType {
-	XMFLOAT3	xmf3Position;
-	XMFLOAT3	xmf3Normal;
-	XMFLOAT3	xmf3Tangent;
-	XMFLOAT3	xmf3BiTangent;
-
-	XMFLOAT4	xmf4Color[8];
-	XMFLOAT2	xmf2TexCoords[8];
-
-	int			boneIndices[4];
-	float		boneWeights[4];
-
-	static D3D12_INPUT_LAYOUT_DESC GetInputLayout() {
-		return {
-			BlendedVertexType::inputElements.data(),
-			(UINT)BlendedVertexType::inputElements.size()
 		};
 	}
 

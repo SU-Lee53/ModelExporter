@@ -1,12 +1,16 @@
 
 struct VS_INPUT
 {
-    float3 pos : POSITION;
-    float3 normal : POSITION;
-    float3 tangent : POSITION;
-    float3 biTangent : POSITION;
-    float4 color : COLOR;
-    float2 TexCoord[8] : TEXCOORD;
+    float3  pos             : POSITION;
+    float3  normal          : NORMAL;
+    float3  tangent         : TANGENT;
+    float3  biTangent       : BITANGENT;
+    float4  color           : COLOR;
+    float2  TexCoord[8]     : TEXCOORD;
+    
+    int     blendIndices[4] : BLEND_INDICES;
+    float   blendWeight[4]  : BLEND_WEIGHTS;
+    
 };
 
 struct VS_OUTPUT

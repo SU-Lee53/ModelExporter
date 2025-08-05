@@ -99,6 +99,7 @@ using namespace Microsoft::WRL;
 #include "Defines.h"
 #include "Concepts.h"
 #include "Utility.h"
+#include "GameTimer.h"
 
 // Managers
 

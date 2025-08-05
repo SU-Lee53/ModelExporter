@@ -72,9 +72,6 @@ private:
 	aiNode* m_rpRootNode = nullptr;
 	UINT m_nNodes = 0;
 
-	std::vector<std::shared_ptr<aiMesh>> m_aiMeshes{};
-	std::map<std::string, std::vector<std::shared_ptr<aiBone>>> m_aiBones;
-
 	std::map<UINT, std::vector<std::pair<UINT ,float>>> m_Weights;
 
 private:

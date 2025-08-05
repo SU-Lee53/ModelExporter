@@ -6,6 +6,7 @@
 std::unique_ptr<AssimpImporter> GameFramework::g_pImporter = nullptr;
 std::unique_ptr<GuiHandler> GameFramework::g_pGuiHandler = nullptr;
 std::unique_ptr<InputManager> GameFramework::g_pInputManager = nullptr;
+std::unique_ptr<GameTimer> GameFramework::g_GameTimer = nullptr;
 
 GameFramework::GameFramework(BOOL bEnableDebugLayer, BOOL bEnableGBV)
 	: m_pD3DCore{ std::make_shared<D3DCore>(bEnableDebugLayer, bEnableGBV) }
@@ -17,13 +18,18 @@ GameFramework::GameFramework(BOOL bEnableDebugLayer, BOOL bEnableGBV)
 	g_pInputManager = std::make_unique<InputManager>();
 	g_pInputManager->Initialize(WinCore::g_hWnd);
 
+	g_GameTimer = std::make_unique<GameTimer>();
+
 	g_pImporter = std::make_unique<AssimpImporter>(m_pD3DCore->GetDevice());
 	g_pImporter->LoadFBXFilesFromPath("../../Models");
 	//m_pImporter->LoadModel("../../Models/Sporty Granny.fbx");
+
 }
 
 void GameFramework::Update()
 {
+	g_GameTimer->Tick(0.0f);
+
 	INPUT->Update();
 	g_pGuiHandler->Update();
 	g_pImporter->Run();
@@ -41,4 +47,7 @@ void GameFramework::Render()
 
 	m_pD3DCore->Present();
 	m_pD3DCore->MoveToNextFrame();
+
+	g_GameTimer->GetFrameRate(L"MODEL_IMPORTER", wstrGameName);
+	::SetWindowText(WinCore::g_hWnd, wstrGameName.data());
 }

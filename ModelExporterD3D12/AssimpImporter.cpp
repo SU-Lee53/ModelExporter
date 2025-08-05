@@ -24,8 +24,6 @@ AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
 
 AssimpImporter::~AssimpImporter()
 {
-	m_aiMeshes.clear();
-	m_aiBones.clear();
 }
 
 void AssimpImporter::LoadFBXFilesFromPath(std::string_view svPath)
@@ -69,7 +67,7 @@ unsigned int CountNodes(const aiNode* node) {
 	if (!node)
 		return 0;
 
-	unsigned int count = 1;  // 이 노드 자신
+	unsigned int count = 1; 
 	for (unsigned int i = 0; i < node->mNumChildren; ++i) {
 		count += CountNodes(node->mChildren[i]);
 	}
@@ -114,20 +112,12 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 
 	m_nNodes = CountNodes(m_rpRootNode);
 
-	m_aiMeshes.clear();
-	m_aiBones.clear();
 	m_Weights.clear();
 
 	for (int i = 0; i < m_rpScene->mNumMeshes; ++i) {
-		aiMesh* pMesh = m_rpScene->mMeshes[i];
-		m_aiMeshes.push_back(std::make_shared<aiMesh>(*pMesh));
-
-		for (int j = 0; j < pMesh->mNumBones; ++j) {
-			aiBone* pBone = pMesh->mBones[j];
-			m_aiBones[pBone->mName.C_Str()].push_back(std::make_shared<aiBone>(*pBone));
-
-			for (int k = 0; k < pBone->mNumWeights; ++k) {
-				aiVertexWeight Weight = pBone->mWeights[k];
+		for (int j = 0; j < m_rpScene->mMeshes[i]->mNumBones; ++j) {
+			for (int k = 0; k < m_rpScene->mMeshes[i]->mBones[j]->mNumWeights; ++k) {
+				aiVertexWeight Weight = m_rpScene->mMeshes[i]->mBones[j]->mWeights[k];
 				m_Weights[Weight.mVertexId].emplace_back(Weight.mVertexId, Weight.mWeight);
 			}
 		}

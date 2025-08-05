@@ -64,7 +64,7 @@ ATOM WinCore::MyRegisterClass()
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wcex.lpszMenuName = NULL;
-    wcex.lpszClassName = m_wstrGameName.c_str();
+    wcex.lpszClassName = L"MODEL IMPORTER";
     wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     return RegisterClassExW(&wcex);
@@ -83,7 +83,7 @@ BOOL WinCore::InitInstance(int cmdShow)
     DWORD dwStyle = WS_OVERLAPPED | WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU | WS_BORDER;
     AdjustWindowRect(&rc, dwStyle, FALSE);
 
-    g_hWnd = CreateWindowW(m_wstrGameName.c_str(), m_wstrGameName.c_str(), dwStyle, CW_USEDEFAULT, 0,
+    g_hWnd = CreateWindowW(L"MODEL IMPORTER", L"MODEL IMPORTER", dwStyle, CW_USEDEFAULT, 0,
         rc.right - rc.left, rc.bottom - rc.top, NULL, NULL, g_hInstance, NULL);
 
     if (!g_hWnd)

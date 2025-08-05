@@ -21,7 +21,6 @@ public:
 	static DWORD g_dwClientHeight;
 
 public:
-	std::wstring m_wstrGameName = L"Model Importer";
 	std::shared_ptr<GameFramework> m_pGameFramework = nullptr;
 
 };
