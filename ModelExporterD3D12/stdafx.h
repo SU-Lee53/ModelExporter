@@ -33,6 +33,7 @@
 #include <utility>
 #include <print>
 #include <filesystem>
+#include <variant>
 
 
 // Direct3D related headers

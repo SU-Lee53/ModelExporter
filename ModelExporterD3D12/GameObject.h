@@ -64,8 +64,12 @@ private:
 
 	ComPtr<ID3D12Resource> m_pCBTransform = nullptr;
 	UINT8* m_pTransformMappedPtr;
-
 	ComPtr<ID3D12DescriptorHeap> m_pd3dTransformDescriptorHeap = nullptr;
+
+private:
+	AnimationComponent m_animationComponent;
+
+private:
 	std::weak_ptr<GameObject> m_pParent;
 	std::vector<std::shared_ptr<GameObject>> m_pChildren;
 
