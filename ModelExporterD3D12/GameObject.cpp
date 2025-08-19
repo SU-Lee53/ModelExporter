@@ -120,6 +120,22 @@ void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCom
 	UpdateShaderVariables(pDevice);
 	pd3dRenderCommandList->SetGraphicsRootDescriptorTable(1, m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
+	// Update Animation data
+	if (m_pAnimation) {
+		if (!m_pParent.expired()) {
+			// Parent 가 없다면 Root -> Animation Controller 를 보유	
+			auto pAnimController = m_pAnimation->Get<ANIMATION_COMPONENT_MODE_CONTROLLER>();
+
+		}
+		else {
+			// Parent 가 없다면 Root 가 아님 -> Animation Node 를 보유
+			auto pAnimNode = m_pAnimation->Get<ANIMATION_COMPONENT_MODE_NODE>();
+
+		}
+
+	}
+
+
 	CD3DX12_CPU_DESCRIPTOR_HANDLE MaterialCPUDescriptorHandle(m_pd3dDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), 1, D3DCore::g_nCBVSRVDescriptorIncrementSize);
 	CD3DX12_GPU_DESCRIPTOR_HANDLE MaterialGPUDescriptorHandle(m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), 1, D3DCore::g_nCBVSRVDescriptorIncrementSize);
 	for (auto&& [idx, pPairs] : m_pMeshMaterialPairs | std::views::enumerate) {

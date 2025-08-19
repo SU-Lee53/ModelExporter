@@ -53,7 +53,7 @@ void AssimpImporter::LoadFBXFilesFromPath(std::string_view svPath)
 	for (const auto& entry : fs::directory_iterator(currentPath)) {
 		for (std::string_view svExtention : strExtentionLists) {
 			std::string strUpper{ svExtention };
-			std::transform(strUpper.begin(), strUpper.end(), strUpper.begin(), [](char c) {return ::toupper(c); });
+			std::transform(strUpper.begin(), strUpper.end(), strUpper.begin(), [](char c) { return ::toupper(c); });
 
 			if (entry.path().extension() == svExtention || entry.path().extension() == strUpper) {
 				m_strFBXFilesFromPath.push_back(entry.path().filename().string());
@@ -688,7 +688,7 @@ void AssimpImporter::PrintAnimation(const aiAnimation& animation)
 	std::string strTreeKey1 = std::format("{} - Channels Count : {}", animation.mName.C_Str(), animation.mNumChannels);
 	if (ImGui::TreeNode(strTreeKey1.c_str())) {
 		for (int i = 0; i < animation.mNumChannels; ++i) {
-			std::string strTreeKey2 = std::format("Channel #{}", i);
+			std::string strTreeKey2 = std::format("Channel #{:<3} - {}", i, animation.mChannels[i]->mNodeName.C_Str());
 			if(ImGui::TreeNode(strTreeKey2.c_str())) {
 				aiNodeAnim* node = animation.mChannels[i];
 				PrintAnimationNode(*node);
@@ -898,8 +898,13 @@ std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& nod
 
 	for (int i = 0; i < node.mNumMeshes; ++i) {
 		aiMesh* pMesh = m_rpScene->mMeshes[node.mMeshes[i]];
-		pObjInfo->MeshMaterialInfoPairs.push_back(std::make_pair( LoadMeshData(*pMesh), LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]) ));
-		//pObjInfo->boneInfo = pMesh->
+		pObjInfo->MeshMaterialInfoPairs.emplace_back( LoadMeshData(*pMesh), LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]) );
+		if (pMesh->HasBones()) {
+			pObjInfo->boneInfos.reserve(pMesh->mNumBones);
+			for (int j = 0; j < pMesh->mNumBones; ++j) {
+				pObjInfo->boneInfos.push_back(LoadBoneData(*pMesh->mBones[j]));
+			}
+		}
 	}
 
 	for (int i = 0; i < node.mNumChildren; ++i) {
@@ -1082,6 +1087,68 @@ MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& material
 BONE_IMPORT_INFO AssimpImporter::LoadBoneData(const aiBone& bone)
 {
 	BONE_IMPORT_INFO info;
+
+	info.strName = bone.mName.C_Str();
+
+	info.weights.reserve(bone.mNumWeights);
+	for (int i = 0; i < bone.mNumWeights; ++i) {
+		info.weights.emplace_back(bone.mWeights[i].mVertexId, bone.mWeights[i].mWeight);
+	}
+
+	info.xmf4x4Offset = XMFLOAT4X4(&bone.mOffsetMatrix.a1);
+
+	return info;
+}
+
+ANIMATION_IMPORT_INFO AssimpImporter::LoadKeyframeAnimationData(const aiAnimation& animation)
+{
+	ANIMATION_IMPORT_INFO info;
+
+	ANIMATION_IMPORT_INFO::ANIMATION_CONTROLLER_IMPORT_INFO controllerInfo;
+	{
+		controllerInfo.strName = animation.mName.C_Str();
+		controllerInfo.fDuration = animation.mDuration;
+		controllerInfo.fTicksPerSecond = animation.mTicksPerSecond;
+		
+		controllerInfo.channels.reserve(animation.mNumChannels);
+		for (int i = 0; i < animation.mNumChannels; ++i) {
+			controllerInfo.channels[i].strName = animation.mChannels[i]->mNodeName.C_Str();
+
+			// Position Keys
+			controllerInfo.channels[i].keyframes.posKeys.reserve(animation.mChannels[i]->mNumPositionKeys);
+			for (int j = 0; j < animation.mChannels[i]->mNumPositionKeys; ++j) {
+				AnimKey posKey{};
+				posKey.fTime = animation.mChannels[i]->mPositionKeys[j].mTime;
+				posKey.xmf3Value = XMFLOAT3(&animation.mChannels[i]->mPositionKeys[j].mValue.x);
+
+				controllerInfo.channels[i].keyframes.posKeys.push_back(posKey);
+			}
+
+			// Rotation Keys (Quaternion)
+			controllerInfo.channels[i].keyframes.rotKeys.reserve(animation.mChannels[i]->mNumRotationKeys);
+			for (int j = 0; j < animation.mChannels[i]->mNumRotationKeys; ++j) {
+				AnimKey rotKey{};
+				rotKey.fTime = animation.mChannels[i]->mRotationKeys[j].mTime;
+				rotKey.xmf3Value = XMFLOAT3(&animation.mChannels[i]->mRotationKeys[j].mValue.x);
+
+				controllerInfo.channels[i].keyframes.rotKeys.push_back(rotKey);
+			}
+
+			// Scailing Keys
+			controllerInfo.channels[i].keyframes.scaleKeys.reserve(animation.mChannels[i]->mNumScalingKeys);
+			for (int j = 0; j < animation.mChannels[i]->mNumScalingKeys; ++j) {
+				AnimKey scaleKey{};
+				scaleKey.fTime = animation.mChannels[i]->mScalingKeys[j].mTime;
+				scaleKey.xmf3Value = XMFLOAT3(&animation.mChannels[i]->mScalingKeys[j].mValue.x);
+
+				controllerInfo.channels[i].keyframes.scaleKeys.push_back(scaleKey);
+			}
+
+		}
+
+	}
+
+
 
 	return info;
 }

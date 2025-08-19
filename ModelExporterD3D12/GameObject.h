@@ -23,7 +23,8 @@ struct OBJECT_IMPORT_INFO {
 	std::string strNodeName;
 
 	std::vector<std::pair<MESH_IMPORT_INFO, MATERIAL_IMPORT_INFO>> MeshMaterialInfoPairs;
-	BONE_IMPORT_INFO boneInfo;
+	std::vector<BONE_IMPORT_INFO> boneInfos;
+	ANIMATION_IMPORT_INFO animationInfo;
 
 	XMFLOAT4X4 xmf4x4Bone;
 
@@ -67,7 +68,7 @@ private:
 	ComPtr<ID3D12DescriptorHeap> m_pd3dTransformDescriptorHeap = nullptr;
 
 private:
-	AnimationComponent m_animationComponent;
+	std::shared_ptr<Animation> m_pAnimation = nullptr;
 
 private:
 	std::weak_ptr<GameObject> m_pParent;

@@ -1,34 +1,62 @@
 #pragma once
 
-struct ANIMATION_LOAD_INFO {
+constexpr UINT MAX_ANIMATION_KEYFRAMES = 250;
+
+struct AnimKey {
+	XMFLOAT3 xmf3Value{ 0,0,0 };
+	float fTime;
+};
+
+struct AnimKeyframe {
+	std::vector<AnimKey> posKeys;
+	std::vector<AnimKey> rotKeys;
+	std::vector<AnimKey> scaleKeys;
+	std::vector<XMFLOAT4X4> xmf4x4FinalTransform;
+};
+
+struct AnimChannel {
 	std::string strName;
-	std::string strChannelName;
-	float fDuration = 0.f;
-	float fTicksPerSecond = 0.f;
-
-	std::vector<Keyframe> Keyframes;
+	AnimKeyframe keyframes;
 };
 
-struct Keyframe {
-	Keyframe() = default;
-	Keyframe(XMFLOAT3 pos, XMFLOAT4 quat, XMFLOAT3 scale) 
-		: xmf3Position{ pos }, xmf3RotationQuat{ quat }, xmf3Scale{ scale } {
-		xmf3Position = pos;
-		xmf3RotationQuat = quat;
-		xmf3Scale = scale;
-		XMStoreFloat4x4(&xmf4x4Transform,
-			XMMatrixAffineTransformation(XMLoadFloat3(&xmf3Scale), XMVectorSet(0, 0, 0, 0), XMLoadFloat4(&xmf3RotationQuat), XMLoadFloat3(&xmf3Position)));
-	}
+struct CB_ANIMATION_CONTROL_DATA {
+	float m_fDuration = 0.f;
+	float m_fTicksPerSecond = 0.f;
 
-	XMFLOAT3 xmf3Position;
-	XMFLOAT4 xmf3RotationQuat;
-	XMFLOAT3 xmf3Scale;
-	XMFLOAT4X4 xmf4x4Transform;
+	float m_fSumTime = 0.f;
 };
 
-struct Animation {
-	std::vector<Keyframe> Keyframes;
-	ComPtr<ID3D12Resource> pAnimationSBuffer;
+struct SB_ANIMATION_TRANSFORM_DATA {
+	struct Data {
+		float fTime;
+		XMFLOAT4X4 xmf4x4Transform;
+	};
+
+	int nKeyframes;
+	Data data[MAX_ANIMATION_KEYFRAMES];
+};
+
+
+struct ANIMATION_IMPORT_INFO {
+	struct ANIMATION_CONTROLLER_IMPORT_INFO {
+		std::string strName;
+		float fDuration = 0.f;
+		float fTicksPerSecond = 0.f;
+		std::vector<AnimChannel> channels;
+	};
+	
+	struct ANIMATION_NODE_IMPORT_INFO {
+		std::string strName;
+		int nKeyframeIndex;
+	};
+
+	ANIMATION_CONTROLLER_IMPORT_INFO controllerInfo;
+	ANIMATION_NODE_IMPORT_INFO nodeInfo;
+};
+
+enum ANIMATION_COMPONENT_MODE : uint8_t {
+	ANIMATION_COMPONENT_MODE_CONTROLLER = 0,
+	ANIMATION_COMPONENT_MODE_NODE
 };
 
 struct AnimationNode {
@@ -36,25 +64,19 @@ struct AnimationNode {
 	int animMatrixIndex;
 };
 
-class AnimationController {
-
-private:
+struct AnimationController {
 	float m_fDuration = 0.f;
 	float m_fSumTime = 0.f;
 	float m_fTicksPerSecond = 0.f;
 
-	std::vector<Keyframe> Keyframes;
-
-};
-
-enum ANIMATION_COMPONENT_MODE : uint8_t{
-	ANIMATION_COMPONENT_MODE_CONTROLLER = 0,
-	ANIMATION_COMPONENT_MODE_NODE
+	std::vector<AnimChannel> channels;
+	ComPtr<ID3D12Resource> pAnimationSBuffer;
+	UINT8* pAnimationDataMappedPtr;
 };
 
 template<ANIMATION_COMPONENT_MODE mode>
 struct _GET_COMPONENT_TYPE {
-	using type = std::void_t;
+	using type = std::nullptr_t;
 };
 
 template<>
@@ -68,12 +90,22 @@ struct _GET_COMPONENT_TYPE<ANIMATION_COMPONENT_MODE_NODE> {
 };
 
 
-class AnimationComponent {
-	constexpr AnimationComponent(ANIMATION_COMPONENT_MODE initMode) : m_eMode{ initMode } {}
+class Animation {
+public:
+	Animation() = default;
+	Animation(ANIMATION_COMPONENT_MODE initMode) : m_eMode{ initMode } {
+		if (initMode == ANIMATION_COMPONENT_MODE_CONTROLLER) {
+			m_pAnimComponent = std::make_shared<AnimationController>();
+		}
+		else {
+			m_pAnimComponent = std::make_shared<AnimationNode>();
+		}
+
+	}
 
 	template<ANIMATION_COMPONENT_MODE mode>
 	typename _GET_COMPONENT_TYPE<mode>::type  Get() {
-		assert(mode == m_eMode, "Template Argument must match with m_eMode");
+		assert(mode == m_eMode);
 		return std::get<mode>(m_pAnimComponent);
 	}
 
@@ -82,4 +114,3 @@ private:
 	const ANIMATION_COMPONENT_MODE m_eMode;
 
 };
-

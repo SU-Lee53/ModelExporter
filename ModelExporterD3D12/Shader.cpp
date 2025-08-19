@@ -29,7 +29,7 @@ void Shader::CompileShader(std::string_view svVSEntryName, std::string_view svPS
 	HRESULT hr = ::D3DCompileFromFile(
 		L"Shader.hlsl",
 		NULL,
-		NULL,
+		D3D_COMPILE_STANDARD_FILE_INCLUDE,
 		svVSEntryName.data(),
 		"vs_5_1",
 		nCompileFlags,
@@ -51,7 +51,7 @@ void Shader::CompileShader(std::string_view svVSEntryName, std::string_view svPS
 	hr = ::D3DCompileFromFile(
 		L"Shader.hlsl",
 		NULL,
-		NULL,
+		D3D_COMPILE_STANDARD_FILE_INCLUDE,
 		svPSEntryName.data(),
 		"ps_5_1",
 		nCompileFlags,

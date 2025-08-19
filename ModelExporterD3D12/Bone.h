@@ -8,7 +8,7 @@ struct BoneWeight {
 struct BONE_IMPORT_INFO {
 	std::string strName;
 	XMFLOAT4X4 xmf4x4Offset;
-	std::vector<std::pair<int, float>> weights;
+	std::vector<std::pair<UINT, float>> weights;
 };
 
 class Bone {

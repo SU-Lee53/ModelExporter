@@ -238,5 +238,8 @@
     <FxCompile Include="Shader.hlsl">
       <Filter>HLSL</Filter>
     </FxCompile>
+    <FxCompile Include="ShaderResources.hlsl">
+      <Filter>HLSL</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>
