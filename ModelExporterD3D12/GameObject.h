@@ -24,7 +24,7 @@ struct OBJECT_IMPORT_INFO {
 
 	std::vector<std::pair<MESH_IMPORT_INFO, MATERIAL_IMPORT_INFO>> MeshMaterialInfoPairs;
 	std::vector<BONE_IMPORT_INFO> boneInfos;
-	ANIMATION_IMPORT_INFO animationInfo;
+	std::vector<std::variant<ANIMATION_CONTROLLER_IMPORT_INFO, ANIMATION_NODE_IMPORT_INFO>> animationInfos;
 
 	XMFLOAT4X4 xmf4x4Bone;
 

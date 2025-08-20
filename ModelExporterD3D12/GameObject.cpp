@@ -48,6 +48,16 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	pObj->m_xmf4x4Transform = pInfo->xmf4x4Bone;
 	pObj->m_pParent = m_pParent;
 
+	// TODO : BONE
+
+	// TODO : ANIMATION
+	if (m_pParent == nullptr) {
+		// Load Controller
+	}
+	else {
+		// Load Node
+	}
+
 	// Create CBV
 	pd3dDevice->CreateCommittedResource(
 		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
@@ -91,7 +101,7 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	}
 
 	// Bone
-	pObj->m_pBone = Bone::LoadFromInfo(pInfo->boneInfo);
+	//pObj->m_pBone = Bone::LoadFromInfo(pInfo->boneInfo);
 
 
 	return pObj;

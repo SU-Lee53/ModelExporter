@@ -19,7 +19,7 @@ public:
 
 private:
 	std::string m_strName;
-	XMFLOAT4X4 m_xmf4x4Offset;
+	XMFLOAT4X4 m_xmf4x4Offset;	// model -> bone : 그릴때는 bone 에서 model 로 전환이 필요하므로 Inverse 필요함
 	std::vector<std::pair<int, float>> m_Weights;
 };
 

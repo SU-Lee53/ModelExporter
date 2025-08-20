@@ -37,21 +37,16 @@ struct SB_ANIMATION_TRANSFORM_DATA {
 };
 
 
-struct ANIMATION_IMPORT_INFO {
-	struct ANIMATION_CONTROLLER_IMPORT_INFO {
-		std::string strName;
-		float fDuration = 0.f;
-		float fTicksPerSecond = 0.f;
-		std::vector<AnimChannel> channels;
-	};
-	
-	struct ANIMATION_NODE_IMPORT_INFO {
-		std::string strName;
-		int nKeyframeIndex;
-	};
+struct ANIMATION_CONTROLLER_IMPORT_INFO {
+	std::string strName;
+	float fDuration = 0.f;
+	float fTicksPerSecond = 0.f;
+	std::vector<AnimChannel> channels;
+};
 
-	ANIMATION_CONTROLLER_IMPORT_INFO controllerInfo;
-	ANIMATION_NODE_IMPORT_INFO nodeInfo;
+struct ANIMATION_NODE_IMPORT_INFO {
+	std::string strName;
+	int nKeyframeIndex;
 };
 
 enum ANIMATION_COMPONENT_MODE : uint8_t {

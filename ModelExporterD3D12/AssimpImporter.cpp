@@ -907,9 +907,23 @@ std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& nod
 		}
 	}
 
+	pObjInfo->animationInfos.reserve(m_rpScene->mNumAnimations);
+	for (int i = 0; i < m_rpScene->mNumAnimations; ++i) {
+		if (!node.mParent) {
+			// Load Controller
+			pObjInfo->animationInfos.push_back(LoadAnimationController(*m_rpScene->mAnimations[i]));
+		}
+		else {
+			// Load Node
+			pObjInfo->animationInfos.push_back(LoadAnimationNode(*m_rpScene->mAnimations[i], node.mName.C_Str()));
+		}
+	}
+
 	for (int i = 0; i < node.mNumChildren; ++i) {
 		pObjInfo->m_pChildren.push_back(LoadObject(*node.mChildren[i], pObjInfo));
 	}
+
+
 
 	return pObjInfo;
 }
@@ -1100,17 +1114,15 @@ BONE_IMPORT_INFO AssimpImporter::LoadBoneData(const aiBone& bone)
 	return info;
 }
 
-ANIMATION_IMPORT_INFO AssimpImporter::LoadKeyframeAnimationData(const aiAnimation& animation)
+ANIMATION_CONTROLLER_IMPORT_INFO AssimpImporter::LoadAnimationController(const aiAnimation& animation)
 {
-	ANIMATION_IMPORT_INFO info;
-
-	ANIMATION_IMPORT_INFO::ANIMATION_CONTROLLER_IMPORT_INFO controllerInfo;
+	ANIMATION_CONTROLLER_IMPORT_INFO controllerInfo;
 	{
 		controllerInfo.strName = animation.mName.C_Str();
 		controllerInfo.fDuration = animation.mDuration;
 		controllerInfo.fTicksPerSecond = animation.mTicksPerSecond;
-		
-		controllerInfo.channels.reserve(animation.mNumChannels);
+
+		controllerInfo.channels.resize(animation.mNumChannels);
 		for (int i = 0; i < animation.mNumChannels; ++i) {
 			controllerInfo.channels[i].strName = animation.mChannels[i]->mNodeName.C_Str();
 
@@ -1143,14 +1155,32 @@ ANIMATION_IMPORT_INFO AssimpImporter::LoadKeyframeAnimationData(const aiAnimatio
 
 				controllerInfo.channels[i].keyframes.scaleKeys.push_back(scaleKey);
 			}
-
 		}
-
 	}
 
+	return controllerInfo;
 
+}
 
-	return info;
+ANIMATION_NODE_IMPORT_INFO AssimpImporter::LoadAnimationNode(const aiAnimation& animation, std::string_view svNodeName)
+{
+	ANIMATION_NODE_IMPORT_INFO nodeInfo;
+
+	for (int i = 0; i < animation.mNumChannels; ++i) {
+		auto pAnimation = animation.mChannels[i];
+		if (pAnimation->mNodeName.C_Str() == svNodeName) {
+			nodeInfo.strName = pAnimation->mNodeName.C_Str();
+			nodeInfo.nKeyframeIndex = i;
+			return nodeInfo;
+		}
+	}
+
+	// if not found
+	nodeInfo.nKeyframeIndex = -1;
+	nodeInfo.strName = "NOT FOUND";
+
+	return nodeInfo;
+
 }
 
 std::string AssimpImporter::ExportTexture(const aiTexture& texture)

@@ -55,7 +55,10 @@ private:
 	MESH_IMPORT_INFO LoadMeshData(const aiMesh& node);
 	MATERIAL_IMPORT_INFO LoadMaterialData(const aiMaterial& node);
 	BONE_IMPORT_INFO LoadBoneData(const aiBone& bone);
-	ANIMATION_IMPORT_INFO LoadKeyframeAnimationData(const aiAnimation& animation);
+	ANIMATION_CONTROLLER_IMPORT_INFO LoadAnimationController(const aiAnimation& animation);
+	ANIMATION_NODE_IMPORT_INFO LoadAnimationNode(const aiAnimation& animation, std::string_view svNodeName);
+	std::pair<ANIMATION_CONTROLLER_IMPORT_INFO, std::vector<ANIMATION_NODE_IMPORT_INFO>> 
+		LoadKeyframeAnimationData(const aiAnimation& animation);
 
 	std::string ExportTexture(const aiTexture& texture);
 	HRESULT ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture);
