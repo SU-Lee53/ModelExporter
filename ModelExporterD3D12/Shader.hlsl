@@ -4,6 +4,10 @@ VS_OUTPUT VSMain(VS_INPUT input)
 {
     VS_OUTPUT output;
     
+    // test
+    float4x4 mtxAnimation = gsbAnimationTransforms[0].mtxTransforms[0];
+    
+    
     matrix mtxToWorld = mul(gmtxLocal, gmtxWorld);
     output.worldPos = mul(float4(input.pos, 1.0f), mtxToWorld);
     output.pos = mul(output.worldPos, gmtxViewProjection);

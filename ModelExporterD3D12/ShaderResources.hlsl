@@ -58,3 +58,26 @@ Texture2D texDetailAlbedo : register(t5);
 Texture2D texDetailNormal : register(t6);
 
 SamplerState samplerDiffuse : register(s0);
+
+
+// Animation 
+#define MAX_ANIMATION_KEYFRAMES     250
+#define MAX_ANIMATION_COUNTS        8
+
+cbuffer cbAnimationControllerData : register(b3)
+{
+    int nCurrentAnimationIndex;
+    float fDuration;
+    float fTicksPerSecond;
+    float fTimeElapsed;
+};
+
+struct AnimationTransforms
+{
+    float4x4 mtxTransforms[MAX_ANIMATION_KEYFRAMES];
+};
+
+StructuredBuffer<AnimationTransforms> gsbAnimationTransforms : register(t7);
+
+
+

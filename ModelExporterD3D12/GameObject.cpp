@@ -53,9 +53,23 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	// TODO : ANIMATION
 	if (m_pParent == nullptr) {
 		// Load Controller
+		for (int i = 0; i < pInfo->animationInfos.size(); ++i) {
+			pObj->m_pAnimation = std::make_shared<Animation>(ANIMATION_COMPONENT_MODE_CONTROLLER);
+			pObj->m_pAnimation->Set(std::get<ANIMATION_CONTROLLER_IMPORT_INFO>(pInfo->animationInfos[i]));
+		}
+
+		auto pController = pObj->m_pAnimation->Get<ANIMATION_COMPONENT_MODE_CONTROLLER>();
+		pController->Initialize();
 	}
 	else {
 		// Load Node
+		for (int i = 0; i < pInfo->animationInfos.size(); ++i) {
+			pObj->m_pAnimation = std::make_shared<Animation>(ANIMATION_COMPONENT_MODE_NODE);
+			pObj->m_pAnimation->Set(std::get<ANIMATION_NODE_IMPORT_INFO>(pInfo->animationInfos[i]));
+		}
+
+		auto pNode = pObj->m_pAnimation->Get<ANIMATION_COMPONENT_MODE_NODE>();
+		pNode->Initialize();
 	}
 
 	// Create CBV

@@ -1155,6 +1155,30 @@ ANIMATION_CONTROLLER_IMPORT_INFO AssimpImporter::LoadAnimationController(const a
 
 				controllerInfo.channels[i].keyframes.scaleKeys.push_back(scaleKey);
 			}
+
+			size_t nMaxKeys = std::max(std::max(controllerInfo.channels[i].keyframes.posKeys.size(), controllerInfo.channels[i].keyframes.rotKeys.size()), 
+				controllerInfo.channels[i].keyframes.scaleKeys.size());
+			controllerInfo.channels[i].keyframes.xmf4x4FinalTransform.reserve(nMaxKeys);
+
+			const auto& posKeys = controllerInfo.channels[i].keyframes.posKeys;
+			const auto& rotKeys = controllerInfo.channels[i].keyframes.rotKeys;
+			const auto& scaleKeys = controllerInfo.channels[i].keyframes.scaleKeys;
+
+			for (int i = 0; i < nMaxKeys; ++i) {
+				XMFLOAT3 posValue = posKeys[i].xmf3Value;
+				XMFLOAT3 rotValue = rotKeys[i].xmf3Value;
+				XMFLOAT3 scaleValue = scaleKeys[i].xmf3Value;
+
+				XMMATRIX xmmtxFinal = XMMatrixAffineTransformation(XMLoadFloat3(&scaleValue), XMVectorSet(0.f, 0.f, 0.f, 1.f), XMLoadFloat3(&rotValue), XMLoadFloat3(&posValue));
+
+				XMFLOAT4X4 xmf4x4Final{};
+				XMStoreFloat4x4(&xmf4x4Final, xmmtxFinal);
+				controllerInfo.channels[i].keyframes.xmf4x4FinalTransform.push_back(xmf4x4Final);
+			}
+
+
+
+
 		}
 	}
 
