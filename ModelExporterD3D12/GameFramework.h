@@ -30,3 +30,4 @@ public:
 #define IMPORTER	GameFramework::g_pImporter
 #define TIMER		GameFramework::g_GameTimer
 
+#define DELTA_TIME		TIMER->m_fTimeElapsed

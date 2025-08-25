@@ -24,12 +24,15 @@ struct OBJECT_IMPORT_INFO {
 
 	std::vector<std::pair<MESH_IMPORT_INFO, MATERIAL_IMPORT_INFO>> MeshMaterialInfoPairs;
 	std::vector<BONE_IMPORT_INFO> boneInfos;
-	std::vector<std::variant<ANIMATION_CONTROLLER_IMPORT_INFO, ANIMATION_NODE_IMPORT_INFO>> animationInfos;
+	std::vector<ANIMATION_IMPORT_INFO> animationInfos;
 
 	XMFLOAT4X4 xmf4x4Bone;
 
-	std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent;
-	std::vector<std::shared_ptr<OBJECT_IMPORT_INFO>> m_pChildren;
+	std::shared_ptr<OBJECT_IMPORT_INFO> pParent;
+	std::vector<std::shared_ptr<OBJECT_IMPORT_INFO>> pChildren;
+
+
+	static std::map<std::string, BONE_IMPORT_INFO> boneMap;
 
 };
 
@@ -42,7 +45,13 @@ class GameObject : public std::enable_shared_from_this<GameObject> {
 public:
 	GameObject();
 
-	void UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice);
+public:
+	std::string GetName() const { return m_strName; }
+	XMFLOAT4X4 GetLocalTransform() const { return m_xmf4x4Transform; }
+	const auto& GetChildren() { return m_pChildren; }
+	const auto& GetBone() { return m_pBone; }
+
+	void UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
 	void Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
 	XMFLOAT4X4 ComputeLocalMatrix();
 	void ShowObjInfo();

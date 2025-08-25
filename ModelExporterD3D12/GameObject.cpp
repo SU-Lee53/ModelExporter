@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "GameObject.h"
 
+std::map<std::string, BONE_IMPORT_INFO> OBJECT_IMPORT_INFO::boneMap{};
+
 GameObject::GameObject()
 {
 	XMStoreFloat4x4(&m_xmf4x4Local, XMMatrixIdentity());
@@ -49,28 +51,12 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	pObj->m_pParent = m_pParent;
 
 	// TODO : BONE
-
-	// TODO : ANIMATION
-	if (m_pParent == nullptr) {
-		// Load Controller
-		for (int i = 0; i < pInfo->animationInfos.size(); ++i) {
-			pObj->m_pAnimation = std::make_shared<Animation>(ANIMATION_COMPONENT_MODE_CONTROLLER);
-			pObj->m_pAnimation->Set(std::get<ANIMATION_CONTROLLER_IMPORT_INFO>(pInfo->animationInfos[i]));
-		}
-
-		auto pController = pObj->m_pAnimation->Get<ANIMATION_COMPONENT_MODE_CONTROLLER>();
-		pController->Initialize();
+	//auto it = std::ranges::find(pInfo->boneInfos, pObj->m_strName, &BONE_IMPORT_INFO::strName);
+	auto it = OBJECT_IMPORT_INFO::boneMap.find(pObj->m_strName);
+	if (it != OBJECT_IMPORT_INFO::boneMap.end()) {
+		pObj->m_pBone = Bone::LoadFromInfo(it->second);
 	}
-	else {
-		// Load Node
-		for (int i = 0; i < pInfo->animationInfos.size(); ++i) {
-			pObj->m_pAnimation = std::make_shared<Animation>(ANIMATION_COMPONENT_MODE_NODE);
-			pObj->m_pAnimation->Set(std::get<ANIMATION_NODE_IMPORT_INFO>(pInfo->animationInfos[i]));
-		}
 
-		auto pNode = pObj->m_pAnimation->Get<ANIMATION_COMPONENT_MODE_NODE>();
-		pNode->Initialize();
-	}
 
 	// Create CBV
 	pd3dDevice->CreateCommittedResource(
@@ -110,18 +96,23 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	}
 	pd3dDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(pObj->m_pd3dDescriptorHeap.GetAddressOf()));
 
-	for (int i = 0; i < pInfo->m_pChildren.size(); ++i) {
-		pObj->m_pChildren.push_back(LoadFromImporter(pd3dDevice, pd3dCommandList, pInfo->m_pChildren[i], pObj));
+	for (int i = 0; i < pInfo->pChildren.size(); ++i) {
+		pObj->m_pChildren.push_back(LoadFromImporter(pd3dDevice, pd3dCommandList, pInfo->pChildren[i], pObj));
 	}
 
-	// Bone
-	//pObj->m_pBone = Bone::LoadFromInfo(pInfo->boneInfo);
+
+	// TODO : ANIMATION (only when Root)
+	// Bone 정보들이 생성되어야 하기 때문에 재귀가 끝나고 Root 에 도달하였을때 호출
+	if (!pInfo->pParent) {
+		pObj->m_pAnimation = Animation::LoadFromInfo(pd3dDevice, pd3dCommandList, pInfo->animationInfos, pObj);
+	}
+
 
 
 	return pObj;
 }
 
-void GameObject::UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice)
+void GameObject::UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
 {
 	CB_TRANSFORM_DATA bindData;
 
@@ -135,30 +126,6 @@ void GameObject::UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice)
 		m_pd3dTransformDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
 		D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
 	);
-}
-
-void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
-{
-	pd3dRenderCommandList->SetDescriptorHeaps(1, m_pd3dDescriptorHeap.GetAddressOf());
-
-	UpdateShaderVariables(pDevice);
-	pd3dRenderCommandList->SetGraphicsRootDescriptorTable(1, m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-
-	// Update Animation data
-	if (m_pAnimation) {
-		if (!m_pParent.expired()) {
-			// Parent 가 없다면 Root -> Animation Controller 를 보유	
-			auto pAnimController = m_pAnimation->Get<ANIMATION_COMPONENT_MODE_CONTROLLER>();
-
-		}
-		else {
-			// Parent 가 없다면 Root 가 아님 -> Animation Node 를 보유
-			auto pAnimNode = m_pAnimation->Get<ANIMATION_COMPONENT_MODE_NODE>();
-
-		}
-
-	}
-
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE MaterialCPUDescriptorHandle(m_pd3dDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), 1, D3DCore::g_nCBVSRVDescriptorIncrementSize);
 	CD3DX12_GPU_DESCRIPTOR_HANDLE MaterialGPUDescriptorHandle(m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), 1, D3DCore::g_nCBVSRVDescriptorIncrementSize);
@@ -179,6 +146,20 @@ void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCom
 
 		pPairs.first->Render(pd3dRenderCommandList);
 	}
+}
+
+void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
+{
+	// TODO : Update Animation data
+	if (m_pParent.expired()) {
+		m_pAnimation->Update();
+	}
+
+	pd3dRenderCommandList->SetDescriptorHeaps(1, m_pd3dDescriptorHeap.GetAddressOf());
+
+	UpdateShaderVariables(pDevice, pd3dRenderCommandList);
+	pd3dRenderCommandList->SetGraphicsRootDescriptorTable(1, m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+
 
 	for (auto& pChild : m_pChildren) {
 		pChild->Render(pDevice, pd3dRenderCommandList);

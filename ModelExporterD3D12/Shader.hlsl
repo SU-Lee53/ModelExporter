@@ -5,7 +5,7 @@ VS_OUTPUT VSMain(VS_INPUT input)
     VS_OUTPUT output;
     
     // test
-    float4x4 mtxAnimation = gsbAnimationTransforms[0].mtxTransforms[0];
+    //float4x4 mtxAnimation = gsbAnimationTransforms[0].mtxTransforms[0];
     
     
     matrix mtxToWorld = mul(gmtxLocal, gmtxWorld);

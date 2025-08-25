@@ -133,6 +133,45 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 	return true;
 }
 
+std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent)
+{
+	std::shared_ptr<OBJECT_IMPORT_INFO> pObjInfo = std::make_shared<OBJECT_IMPORT_INFO>();
+
+	pObjInfo->strNodeName = node.mName.C_Str();
+
+	XMMATRIX xmmtxTransform = XMLoadFloat4x4(&XMFLOAT4X4(&node.mTransformation.a1));
+	xmmtxTransform = XMMatrixTranspose(xmmtxTransform);
+	XMStoreFloat4x4(&pObjInfo->xmf4x4Bone, xmmtxTransform);
+	pObjInfo->pParent = m_pParent;
+
+	for (int i = 0; i < node.mNumMeshes; ++i) {
+		aiMesh* pMesh = m_rpScene->mMeshes[node.mMeshes[i]];
+		pObjInfo->MeshMaterialInfoPairs.emplace_back(LoadMeshData(*pMesh), LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]));
+		if (pMesh->HasBones()) {
+			/*pObjInfo->boneInfos.reserve(pMesh->mNumBones);
+			for (int j = 0; j < pMesh->mNumBones; ++j) {
+				pObjInfo->boneInfos.push_back(LoadBoneData(*pMesh->mBones[j]));
+			}*/
+
+			for (int j = 0; j < pMesh->mNumBones; ++j) {
+				OBJECT_IMPORT_INFO::boneMap.insert({ pMesh->mBones[j]->mName.C_Str(), LoadBoneData(*pMesh->mBones[j]) });
+			}
+
+		}
+	}
+
+	pObjInfo->animationInfos.reserve(m_rpScene->mNumAnimations);
+	for (int i = 0; i < m_rpScene->mNumAnimations; ++i) {
+		pObjInfo->animationInfos.push_back(LoadAnimationData(*m_rpScene->mAnimations[i]));
+	}
+
+	for (int i = 0; i < node.mNumChildren; ++i) {
+		pObjInfo->pChildren.push_back(LoadObject(*node.mChildren[i], pObjInfo));
+	}
+
+	return pObjInfo;
+}
+
 void AssimpImporter::Run()
 {
 	ImGui::Begin("AssimpImporter");
@@ -885,48 +924,6 @@ std::string AssimpImporter::FormatMetaData(const aiMetadata& metaData, size_t id
 	}
 }
 
-std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent)
-{
-	std::shared_ptr<OBJECT_IMPORT_INFO> pObjInfo = std::make_shared<OBJECT_IMPORT_INFO>();
-
-	pObjInfo->strNodeName = node.mName.C_Str();
-
-	XMMATRIX xmmtxTransform = XMLoadFloat4x4(&XMFLOAT4X4(&node.mTransformation.a1));
-	xmmtxTransform = XMMatrixTranspose(xmmtxTransform);
-	XMStoreFloat4x4(&pObjInfo->xmf4x4Bone, xmmtxTransform);
-	pObjInfo->m_pParent = m_pParent;
-
-	for (int i = 0; i < node.mNumMeshes; ++i) {
-		aiMesh* pMesh = m_rpScene->mMeshes[node.mMeshes[i]];
-		pObjInfo->MeshMaterialInfoPairs.emplace_back( LoadMeshData(*pMesh), LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]) );
-		if (pMesh->HasBones()) {
-			pObjInfo->boneInfos.reserve(pMesh->mNumBones);
-			for (int j = 0; j < pMesh->mNumBones; ++j) {
-				pObjInfo->boneInfos.push_back(LoadBoneData(*pMesh->mBones[j]));
-			}
-		}
-	}
-
-	pObjInfo->animationInfos.reserve(m_rpScene->mNumAnimations);
-	for (int i = 0; i < m_rpScene->mNumAnimations; ++i) {
-		if (!node.mParent) {
-			// Load Controller
-			pObjInfo->animationInfos.push_back(LoadAnimationController(*m_rpScene->mAnimations[i]));
-		}
-		else {
-			// Load Node
-			pObjInfo->animationInfos.push_back(LoadAnimationNode(*m_rpScene->mAnimations[i], node.mName.C_Str()));
-		}
-	}
-
-	for (int i = 0; i < node.mNumChildren; ++i) {
-		pObjInfo->m_pChildren.push_back(LoadObject(*node.mChildren[i], pObjInfo));
-	}
-
-
-
-	return pObjInfo;
-}
 
 MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 {
@@ -1104,107 +1101,113 @@ BONE_IMPORT_INFO AssimpImporter::LoadBoneData(const aiBone& bone)
 
 	info.strName = bone.mName.C_Str();
 
-	info.weights.reserve(bone.mNumWeights);
-	for (int i = 0; i < bone.mNumWeights; ++i) {
-		info.weights.emplace_back(bone.mWeights[i].mVertexId, bone.mWeights[i].mWeight);
-	}
-
 	info.xmf4x4Offset = XMFLOAT4X4(&bone.mOffsetMatrix.a1);
 
 	return info;
 }
 
-ANIMATION_CONTROLLER_IMPORT_INFO AssimpImporter::LoadAnimationController(const aiAnimation& animation)
+ANIMATION_IMPORT_INFO AssimpImporter::LoadAnimationData(const aiAnimation& animation)
 {
-	ANIMATION_CONTROLLER_IMPORT_INFO controllerInfo;
+	/* 
+		- 애니메이션이 30프레임이라고 가정하고 각 Key 들을 샘플링
+	*/
+	ANIMATION_IMPORT_INFO info;
 	{
-		controllerInfo.strName = animation.mName.C_Str();
-		controllerInfo.fDuration = animation.mDuration;
-		controllerInfo.fTicksPerSecond = animation.mTicksPerSecond;
+		info.strAnimationName = animation.mName.C_Str();
+		info.fDuration = animation.mDuration;
+		info.fTicksPerSecond = animation.mTicksPerSecond;
 
-		controllerInfo.channels.resize(animation.mNumChannels);
+		float fDurationInSec = info.fDuration / info.fTicksPerSecond;
+		const UINT nFrameRate = 30;
+		UINT nFrameCount = std::ceil(fDurationInSec * nFrameRate);
+
 		for (int i = 0; i < animation.mNumChannels; ++i) {
-			controllerInfo.channels[i].strName = animation.mChannels[i]->mNodeName.C_Str();
+			aiNodeAnim* pChannel = animation.mChannels[i];
 
-			// Position Keys
-			controllerInfo.channels[i].keyframes.posKeys.reserve(animation.mChannels[i]->mNumPositionKeys);
-			for (int j = 0; j < animation.mChannels[i]->mNumPositionKeys; ++j) {
-				AnimKey posKey{};
-				posKey.fTime = animation.mChannels[i]->mPositionKeys[j].mTime;
-				posKey.xmf3Value = XMFLOAT3(&animation.mChannels[i]->mPositionKeys[j].mValue.x);
+			AnimChannel channel{};
+			channel.strName = pChannel->mNodeName.C_Str();
+			channel.keyframes.reserve(nFrameCount);
 
-				controllerInfo.channels[i].keyframes.posKeys.push_back(posKey);
+			for (int j = 0; j < nFrameCount; ++j) {
+				float fTime = j / (float)nFrameRate;
+				float fTick = fTime * info.fTicksPerSecond;
+				AnimKeyframe keyframe{};
+
+				if (pChannel->mNumPositionKeys > 0) {
+					keyframe.xmf3PositionKey = InterpolateVectorKeyframe(fTick, pChannel->mPositionKeys, pChannel->mNumPositionKeys);
+				}
+
+				if (pChannel->mNumRotationKeys > 0) {
+					keyframe.xmf4RotationKey = InterpolateQuaternionKeyframe(fTick, pChannel->mRotationKeys, pChannel->mNumRotationKeys);
+				}
+
+				if (pChannel->mNumScalingKeys > 0) {
+					keyframe.xmf3ScaleKey = InterpolateVectorKeyframe(fTick, pChannel->mScalingKeys, pChannel->mNumScalingKeys);
+				}
+
+				keyframe.fTime = fTime;
+
+				channel.keyframes.push_back(keyframe);
 			}
 
-			// Rotation Keys (Quaternion)
-			controllerInfo.channels[i].keyframes.rotKeys.reserve(animation.mChannels[i]->mNumRotationKeys);
-			for (int j = 0; j < animation.mChannels[i]->mNumRotationKeys; ++j) {
-				AnimKey rotKey{};
-				rotKey.fTime = animation.mChannels[i]->mRotationKeys[j].mTime;
-				rotKey.xmf3Value = XMFLOAT3(&animation.mChannels[i]->mRotationKeys[j].mValue.x);
-
-				controllerInfo.channels[i].keyframes.rotKeys.push_back(rotKey);
-			}
-
-			// Scailing Keys
-			controllerInfo.channels[i].keyframes.scaleKeys.reserve(animation.mChannels[i]->mNumScalingKeys);
-			for (int j = 0; j < animation.mChannels[i]->mNumScalingKeys; ++j) {
-				AnimKey scaleKey{};
-				scaleKey.fTime = animation.mChannels[i]->mScalingKeys[j].mTime;
-				scaleKey.xmf3Value = XMFLOAT3(&animation.mChannels[i]->mScalingKeys[j].mValue.x);
-
-				controllerInfo.channels[i].keyframes.scaleKeys.push_back(scaleKey);
-			}
-
-			size_t nMaxKeys = std::max(std::max(controllerInfo.channels[i].keyframes.posKeys.size(), controllerInfo.channels[i].keyframes.rotKeys.size()), 
-				controllerInfo.channels[i].keyframes.scaleKeys.size());
-			controllerInfo.channels[i].keyframes.xmf4x4FinalTransform.reserve(nMaxKeys);
-
-			const auto& posKeys = controllerInfo.channels[i].keyframes.posKeys;
-			const auto& rotKeys = controllerInfo.channels[i].keyframes.rotKeys;
-			const auto& scaleKeys = controllerInfo.channels[i].keyframes.scaleKeys;
-
-			for (int i = 0; i < nMaxKeys; ++i) {
-				XMFLOAT3 posValue = posKeys[i].xmf3Value;
-				XMFLOAT3 rotValue = rotKeys[i].xmf3Value;
-				XMFLOAT3 scaleValue = scaleKeys[i].xmf3Value;
-
-				XMMATRIX xmmtxFinal = XMMatrixAffineTransformation(XMLoadFloat3(&scaleValue), XMVectorSet(0.f, 0.f, 0.f, 1.f), XMLoadFloat3(&rotValue), XMLoadFloat3(&posValue));
-
-				XMFLOAT4X4 xmf4x4Final{};
-				XMStoreFloat4x4(&xmf4x4Final, xmmtxFinal);
-				controllerInfo.channels[i].keyframes.xmf4x4FinalTransform.push_back(xmf4x4Final);
-			}
-
-
-
-
+			info.animationDatas.push_back(channel);
 		}
 	}
 
-	return controllerInfo;
+	return info;
 
 }
 
-ANIMATION_NODE_IMPORT_INFO AssimpImporter::LoadAnimationNode(const aiAnimation& animation, std::string_view svNodeName)
+DirectX::XMFLOAT3 AssimpImporter::InterpolateVectorKeyframe(float fTime, aiVectorKey* keys, UINT nKeys)
 {
-	ANIMATION_NODE_IMPORT_INFO nodeInfo;
+	if (nKeys == 1)
+		return XMFLOAT3(&keys[0].mValue.x);
 
-	for (int i = 0; i < animation.mNumChannels; ++i) {
-		auto pAnimation = animation.mChannels[i];
-		if (pAnimation->mNodeName.C_Str() == svNodeName) {
-			nodeInfo.strName = pAnimation->mNodeName.C_Str();
-			nodeInfo.nKeyframeIndex = i;
-			return nodeInfo;
-		}
+	// Find current index
+	int nIndex = 0;
+	while (nIndex + 1 < nKeys && fTime >= (float)keys[nIndex + 1].mTime) {
+		nIndex++;
 	}
 
-	// if not found
-	nodeInfo.nKeyframeIndex = -1;
-	nodeInfo.strName = "NOT FOUND";
+	int nNextIndex = nIndex + 1;
+	float fdelta = (float)(keys[nNextIndex].mTime - keys[nIndex].mTime);
+	float fFactor = (fTime - (float)keys[nIndex].mTime) / fdelta;
 
-	return nodeInfo;
+	XMFLOAT3 xmf3Start = XMFLOAT3(&keys[nIndex].mValue.x);
+	XMFLOAT3 xmf3End = XMFLOAT3(&keys[nNextIndex].mValue.x);
 
+	XMVECTOR xmvStart = XMLoadFloat3(&xmf3Start);
+	XMVECTOR xmvEnd = XMLoadFloat3(&xmf3End);
+	
+	XMVECTOR xmvResult = XMVectorAdd(xmvStart, XMVectorScale(XMVectorSubtract(xmvEnd, xmvStart), fFactor));
+	
+	XMFLOAT3 xmf3Result;
+	XMStoreFloat3(&xmf3Result, xmvResult);
+	return xmf3Result;
+}
+
+DirectX::XMFLOAT4 AssimpImporter::InterpolateQuaternionKeyframe(float fTime, aiQuatKey* keys, UINT nKeys)
+{
+	if (nKeys == 1)
+		return XMFLOAT4(keys[0].mValue.x, keys[0].mValue.y, keys[0].mValue.z, keys[0].mValue.w);
+
+	// Find current index
+	int nIndex = 0;
+	while (nIndex + 1 < nKeys && fTime >= (float)keys[nIndex + 1].mTime) {
+		nIndex++;
+	}
+
+	int nNextIndex = nIndex + 1;
+	float fdelta = (float)(keys[nNextIndex].mTime - keys[nIndex].mTime);
+	float fFactor = (fTime - (float)keys[nIndex].mTime) / fdelta;
+
+	aiQuaternion aiqStart = keys[nIndex].mValue;
+	aiQuaternion aiqEnd = keys[nNextIndex].mValue;
+	aiQuaternion aiqResult;
+	aiQuaternion::Interpolate(aiqResult, aiqStart, aiqEnd, fFactor);
+	aiqResult.Normalize();
+
+	return XMFLOAT4(aiqResult.x, aiqResult.y, aiqResult.z, aiqResult.w);
 }
 
 std::string AssimpImporter::ExportTexture(const aiTexture& texture)

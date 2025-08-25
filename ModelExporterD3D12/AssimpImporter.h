@@ -11,6 +11,8 @@ public:
 
 	void LoadFBXFilesFromPath(std::string_view svPath);
 	bool LoadModel(std::string_view svPath);
+	std::shared_ptr<OBJECT_IMPORT_INFO>
+		LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent);
 
 	void Run();
 	void RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
@@ -20,8 +22,6 @@ public:
 private:
 	void ShowSceneAttribute();
 	void ShowNodeAll();
-	std::shared_ptr<OBJECT_IMPORT_INFO> 
-		LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent);
 
 private:
 	void PrintTabs();
@@ -55,10 +55,10 @@ private:
 	MESH_IMPORT_INFO LoadMeshData(const aiMesh& node);
 	MATERIAL_IMPORT_INFO LoadMaterialData(const aiMaterial& node);
 	BONE_IMPORT_INFO LoadBoneData(const aiBone& bone);
-	ANIMATION_CONTROLLER_IMPORT_INFO LoadAnimationController(const aiAnimation& animation);
-	ANIMATION_NODE_IMPORT_INFO LoadAnimationNode(const aiAnimation& animation, std::string_view svNodeName);
-	std::pair<ANIMATION_CONTROLLER_IMPORT_INFO, std::vector<ANIMATION_NODE_IMPORT_INFO>> 
-		LoadKeyframeAnimationData(const aiAnimation& animation);
+	ANIMATION_IMPORT_INFO LoadAnimationData(const aiAnimation& animation);
+
+	XMFLOAT3 InterpolateVectorKeyframe(float fTime, aiVectorKey* keys, UINT nKeys);
+	XMFLOAT4 InterpolateQuaternionKeyframe(float fTime, aiQuatKey* keys, UINT nKeys);
 
 	std::string ExportTexture(const aiTexture& texture);
 	HRESULT ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture);

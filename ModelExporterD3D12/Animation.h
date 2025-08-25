@@ -1,23 +1,47 @@
 #pragma once
 
-constexpr UINT MAX_ANIMATION_KEYFRAMES = 250;
-constexpr UINT MAX_ANIMATION_COUNTS = 8;
+constexpr UINT MAX_BONE_COUNT = 250;
 
-struct AnimKey {
-	XMFLOAT3 xmf3Value{ 0,0,0 };
-	float fTime;
-};
+/*
+	08.23 갈아엎는다
+		- AnimationNode 는 Bone 으로 대체
+		- IMPORT 시에는 Bone 정보와 keyframe 변환 정보를 std::map으로 묶어서 받아옴
+		- 모든 애니메이션 정보와 최종 행렬 + 이를 GPU로 보낼 ID3D12Resource 는 Root 의 Animation 객체에만 보관
+			- 자식 GameObject 들의 Animation 은 nullptr
+		- 나머지 자식 노드들은 Bone 정보를 GPU에 업로드하여 애니메이션 재생
+
+		- 현재 흐른 시간에 맞게 keyframe 들을 보간하여 Bone 들의 행렬 array 를 만들어 GPU로 전송 -> StructuredBuffer?
+		- 결국 GPU가 갖는 값은:
+			[Bone #0 Key Matrix][Bone #1 Key Matrix][Bone #2 Key Matrix] ... [Bone #250 Key Matrix] -> 최대 250개의 Bone 을 지원
+		- 나중에 자식들을 렌더링할시 Bone 별로 알맞는 인덱스를 찾아가도록 Bone 정보를 GPU로 보내주어야 함
+		- 애니메이션 행렬들은 Bone Local 변환이므로 GameObject::xmf4x4Transforms 처럼 부모 누적이 필요함
+			- 이 누적을 어떻게 할것인가가 현재 최대 문제점인거 같음
+		- 할꺼 많노
+
+	08.24
+		- AnimationNode 가 필요하긴 할듯 -> 이전처럼 각 자식이 아닌 Root 의 Animation 객체가 가지고있도록 하고 GameObject 처럼 계층 구조를 갖도록 한다
+*/
+
 
 struct AnimKeyframe {
-	std::vector<AnimKey> posKeys;
-	std::vector<AnimKey> rotKeys;
-	std::vector<AnimKey> scaleKeys;
-	std::vector<XMFLOAT4X4> xmf4x4FinalTransform;
+	float fTime;
+	XMFLOAT3 xmf3PositionKey;
+	XMFLOAT4 xmf4RotationKey;
+	XMFLOAT3 xmf3ScaleKey;
 };
 
 struct AnimChannel {
-	std::string strName;
-	AnimKeyframe keyframes;
+	std::string strName;	// Bone Name
+	std::vector<AnimKeyframe> keyframes;
+};
+
+struct ANIMATION_IMPORT_INFO {
+	std::string strAnimationName;
+	float fDuration = 0.f;
+	float fTicksPerSecond = 0.f;
+	float fFrameRate = 0.f;
+
+	std::vector<AnimChannel> animationDatas;
 };
 
 struct CB_ANIMATION_CONTROL_DATA {
@@ -27,128 +51,38 @@ struct CB_ANIMATION_CONTROL_DATA {
 	float	fTimeElapsed;
 };
 
-struct SB_ANIMATION_TRANSFORM_DATA {
-	XMFLOAT4X4 xmf4x4Transforms[MAX_ANIMATION_COUNTS][MAX_ANIMATION_KEYFRAMES];
+struct CB_ANIMATION_TRANSFORM_DATA {
+	XMFLOAT4X4 xmf4x4Transforms[MAX_BONE_COUNT];
 };
 
-struct ANIMATION_CONTROLLER_IMPORT_INFO {
-	std::string strName;
-	float fDuration = 0.f;
-	float fTicksPerSecond = 0.f;
-	std::vector<AnimChannel> channels;
-};
-
-struct ANIMATION_NODE_IMPORT_INFO {
-	std::string strName;
-	int nKeyframeIndex;
-};
-
-enum ANIMATION_COMPONENT_MODE : uint8_t {
-	ANIMATION_COMPONENT_MODE_CONTROLLER = 0,
-	ANIMATION_COMPONENT_MODE_NODE
-};
-
-struct AnimationNode {
-	std::string strNodeName;
-	std::vector<int> animMatrixIndices;	// vector index : animation index
-										// value : bone index in animation transform structured buffer
-	
+class Animation {
 public:
-	void Initialize();
+	void Update();
 
-};
-
-struct AnimationController {
+public:
 	struct Data {
-		float m_fDuration = 0.f;
-		float m_fTicksPerSecond = 0.f;
+		float	fDuration = 0.f;
+		float	fTicksPerSecond = 0.f;
+		int		nFrameCount = 0;
 
 		std::vector<AnimChannel> channels;
 	};
 
-	std::vector<Data> AnimationDatas;
-	int nAnimIndex = -1;
-	float m_fTimeElapsed = 0.f;
+	int		m_nCurrentAnimationIndex = 0;
+	float	m_fTimeElapsed = 0.f;
+
+	std::vector<Data> m_AnimationDatas;
 
 	ComPtr<ID3D12Resource> pControllerCBuffer;
 	UINT8* pControllerDataMappedPtr;
 
-	ComPtr<ID3D12Resource> pAnimationSBuffer;
-	UINT8* pAnimationDataMappedPtr;
+	ComPtr<ID3D12Resource> pBoneTransformCBuffer;
+	UINT8* pBoneTransformMappedPtr;
 
+	std::weak_ptr<GameObject> m_wpOwner;
 
 public:
-	void Initialize();
+	static std::shared_ptr<Animation> LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const std::vector<ANIMATION_IMPORT_INFO>& infos, std::shared_ptr<GameObject> pOwner);
 
-};
-
-template<typename T>
-concept AnimationDataInfoType =	std::same_as<T, ANIMATION_CONTROLLER_IMPORT_INFO>
-								|| std::same_as<T, ANIMATION_NODE_IMPORT_INFO>;
-
-template<ANIMATION_COMPONENT_MODE mode>
-struct _GET_COMPONENT_TYPE {
-	using type = std::nullptr_t;
-};
-
-template<>
-struct _GET_COMPONENT_TYPE<ANIMATION_COMPONENT_MODE_CONTROLLER> {
-	using type = std::shared_ptr<AnimationController>;
-};
-
-template<>
-struct _GET_COMPONENT_TYPE<ANIMATION_COMPONENT_MODE_NODE> {
-	using type = std::shared_ptr<AnimationNode>;
-};
-
-
-class Animation {
-public:
-	Animation() = default;
-	Animation(ANIMATION_COMPONENT_MODE initMode) : m_eMode{ initMode } {
-		if (initMode == ANIMATION_COMPONENT_MODE_CONTROLLER) {
-			m_pAnimComponent = std::make_shared<AnimationController>();
-		}
-		else {
-			m_pAnimComponent = std::make_shared<AnimationNode>();
-		}
-
-	}
-
-	template<ANIMATION_COMPONENT_MODE mode>
-	typename _GET_COMPONENT_TYPE<mode>::type  Get() {
-		assert(mode == m_eMode);
-		return std::get<mode>(m_pAnimComponent);
-	}
-
-	template<AnimationDataInfoType T>
-	void Set(const T& data) {
-		if constexpr (std::is_same_v<T, ANIMATION_CONTROLLER_IMPORT_INFO>) {
-			assert(std::holds_alternative<std::shared_ptr<AnimationController>>(m_pAnimComponent));
-
-			auto pController = std::get<std::shared_ptr<AnimationController>>(m_pAnimComponent);
-
-			AnimationController::Data animData{};
-			animData.m_fDuration = data.fDuration;
-			animData.m_fTicksPerSecond = data.fTicksPerSecond;
-			animData.channels = data.channels;
-
-			pController->AnimationDatas.push_back(animData);
-		}
-		else if constexpr (std::is_same_v<T, ANIMATION_NODE_IMPORT_INFO>) {
-			assert(std::holds_alternative<std::shared_ptr<AnimationNode>>(m_pAnimComponent));
-			auto pNode = std::get<std::shared_ptr<AnimationNode>>(m_pAnimComponent);
-
-			pNode->strNodeName = data.strName;
-			pNode->animMatrixIndices.push_back(data.nKeyframeIndex);
-		}
-		else {
-			std::unreachable();
-		}
-	}
-
-private:
-	std::variant<std::shared_ptr<AnimationController>, std::shared_ptr<AnimationNode>> m_pAnimComponent;
-	const ANIMATION_COMPONENT_MODE m_eMode;
 
 };
