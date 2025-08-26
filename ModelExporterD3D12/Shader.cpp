@@ -79,15 +79,15 @@ void DiffusedShader::CreateRootSignature(ComPtr<ID3D12Device> pd3dDevice)
 	std::array<CD3DX12_DESCRIPTOR_RANGE, 3> descRange{};
 	descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);	// b1 transform 
 	descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);	// b2 material
-	descRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);
-	// t0, t1, t2, t3, t4, t5
-	// 각각 Albedo(diffuse), Specular, Metallic, Normal, Emission, Detail Albedo, Detail Normal
-
-	std::array<CD3DX12_ROOT_PARAMETER, 4> rootParameters{};
+	descRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);	// t0, t1, t2, t3, t4, t5 : 각각 Albedo(diffuse), Specular, Metallic, Normal, Emission, Detail Albedo, Detail Normal
+	
+	std::array<CD3DX12_ROOT_PARAMETER, 6> rootParameters{};
 	rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// b0 ViewProj
 	rootParameters[1].InitAsDescriptorTable(1, &descRange[0]);	// transform, material
 	rootParameters[2].InitAsDescriptorTable(1, &descRange[1]);	// transform, material
 	rootParameters[3].InitAsDescriptorTable(1, &descRange[2]);	// texture 6개(최대)
+	rootParameters[4].InitAsConstantBufferView(3, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// Animation Control
+	rootParameters[5].InitAsConstantBufferView(4, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// Animation Control
 
 	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
@@ -166,15 +166,15 @@ void AlbedoShader::CreateRootSignature(ComPtr<ID3D12Device> pd3dDevice)
 	std::array<CD3DX12_DESCRIPTOR_RANGE, 3> descRange{};
 	descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);	// b1 transform 
 	descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);	// b2 material
-	descRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);
-	// t0, t1, t2, t3, t4, t5
-	// 각각 Albedo(diffuse), Specular, Metallic, Normal, Emission, Detail Albedo, Detail Normal
+	descRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);	// t0, t1, t2, t3, t4, t5 : 각각 Albedo(diffuse), Specular, Metallic, Normal, Emission, Detail Albedo, Detail Normal
 
-	std::array<CD3DX12_ROOT_PARAMETER, 4> rootParameters{};
+	std::array<CD3DX12_ROOT_PARAMETER, 6> rootParameters{};
 	rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// b0 ViewProj
 	rootParameters[1].InitAsDescriptorTable(1, &descRange[0]);	// transform, material
 	rootParameters[2].InitAsDescriptorTable(1, &descRange[1]);	// transform, material
 	rootParameters[3].InitAsDescriptorTable(1, &descRange[2]);	// texture 6개(최대)
+	rootParameters[4].InitAsConstantBufferView(3, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// Animation Control
+	rootParameters[5].InitAsConstantBufferView(4, 0, D3D12_SHADER_VISIBILITY_VERTEX);	// Animation Control
 
 	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |

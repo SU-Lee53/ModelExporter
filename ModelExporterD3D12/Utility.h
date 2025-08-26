@@ -12,3 +12,8 @@ std::string FormatVector4(const XMFLOAT4& xmf4Vector);
 
 
 extern inline size_t AlignConstantBuffersize(size_t size);
+
+template<typename T>
+struct ConstantBufferSize {
+	constexpr static size_t value = (sizeof(T) + 255) & (~255);
+};

@@ -90,7 +90,7 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	// Descriptor Heap Per Obj -> SHADER_VISIBLE
 	{
 		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		heapDesc.NumDescriptors = 1 + (Material::MATERIAL_DESCRIPTOR_COUNT_PER_DRAW * pInfo->MeshMaterialInfoPairs.size());
+		heapDesc.NumDescriptors = 1 + (Material::MATERIAL_DESCRIPTOR_COUNT_PER_DRAW * pInfo->MeshMaterialInfoPairs.size()) + Animation::ANIMATION_DESCRIPTOR_COUNT_PER_DRAW;
 		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		heapDesc.NodeMask = 0;
 	}
@@ -100,11 +100,12 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 		pObj->m_pChildren.push_back(LoadFromImporter(pd3dDevice, pd3dCommandList, pInfo->pChildren[i], pObj));
 	}
 
-
 	// TODO : ANIMATION (only when Root)
 	// Bone 정보들이 생성되어야 하기 때문에 재귀가 끝나고 Root 에 도달하였을때 호출
 	if (!pInfo->pParent) {
-		pObj->m_pAnimation = Animation::LoadFromInfo(pd3dDevice, pd3dCommandList, pInfo->animationInfos, pObj);
+		if (pInfo->animationInfos.size() != 0) {
+			pObj->m_pAnimation = Animation::LoadFromInfo(pd3dDevice, pd3dCommandList, pInfo->animationInfos, pObj);
+		}
 	}
 
 
@@ -126,6 +127,20 @@ void GameObject::UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice, ComPtr<ID
 		m_pd3dTransformDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
 		D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
 	);
+	pd3dRenderCommandList->SetGraphicsRootDescriptorTable(1, m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+
+	// TODO : Update Animation data
+	if (m_pParent.expired() && m_pAnimation) {
+		m_pAnimation->UpdateShaderVariables(pd3dRenderCommandList);
+	}
+
+}
+
+void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
+{
+	pd3dRenderCommandList->SetDescriptorHeaps(1, m_pd3dDescriptorHeap.GetAddressOf());
+
+	UpdateShaderVariables(pDevice, pd3dRenderCommandList);
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE MaterialCPUDescriptorHandle(m_pd3dDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), 1, D3DCore::g_nCBVSRVDescriptorIncrementSize);
 	CD3DX12_GPU_DESCRIPTOR_HANDLE MaterialGPUDescriptorHandle(m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), 1, D3DCore::g_nCBVSRVDescriptorIncrementSize);
@@ -146,19 +161,6 @@ void GameObject::UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice, ComPtr<ID
 
 		pPairs.first->Render(pd3dRenderCommandList);
 	}
-}
-
-void GameObject::Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
-{
-	// TODO : Update Animation data
-	if (m_pParent.expired()) {
-		m_pAnimation->Update();
-	}
-
-	pd3dRenderCommandList->SetDescriptorHeaps(1, m_pd3dDescriptorHeap.GetAddressOf());
-
-	UpdateShaderVariables(pDevice, pd3dRenderCommandList);
-	pd3dRenderCommandList->SetGraphicsRootDescriptorTable(1, m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 
 	for (auto& pChild : m_pChildren) {

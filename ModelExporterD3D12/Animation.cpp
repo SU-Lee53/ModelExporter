@@ -3,7 +3,7 @@
 
 
 
-void Animation::Update()
+void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
 {
 	auto curAnimation = m_AnimationDatas[m_nCurrentAnimationIndex];
 	m_fTimeElapsed += DELTA_TIME;
@@ -70,7 +70,19 @@ void Animation::Update()
 		xmf4x4FinalMatrices.push_back(xmf4x4Final);
 	}
 
-	::memcpy(pBoneTransformMappedPtr, xmf4x4FinalMatrices.data(), sizeof(XMFLOAT4X4) * bones.size());
+	::memcpy(m_pBoneTransformMappedPtr, xmf4x4FinalMatrices.data(), sizeof(XMFLOAT4X4) * bones.size());
+
+	// Control Data
+	CB_ANIMATION_CONTROL_DATA controlData{};
+	controlData.nCurrentAnimationIndex = m_nCurrentAnimationIndex;
+	controlData.fDuration = m_AnimationDatas[m_nCurrentAnimationIndex].fDuration;
+	controlData.fTicksPerSecond = m_AnimationDatas[m_nCurrentAnimationIndex].fTicksPerSecond;
+	controlData.fTimeElapsed = m_fTimeElapsed;
+
+	::memcpy(m_pControllerDataMappedPtr, &controlData, sizeof(CB_ANIMATION_CONTROL_DATA));
+
+	pd3dRenderCommandList->SetGraphicsRootConstantBufferView(4, m_pControllerCBuffer->GetGPUVirtualAddress());
+	pd3dRenderCommandList->SetGraphicsRootConstantBufferView(5, m_pBoneTransformCBuffer->GetGPUVirtualAddress());
 
 	ImGui::Begin("Animation");
 	{
@@ -104,10 +116,10 @@ std::shared_ptr<Animation> Animation::LoadFromInfo(ComPtr<ID3D12Device14> pd3dDe
 		&CD3DX12_RESOURCE_DESC::Buffer(::AlignConstantBuffersize(sizeof(CB_ANIMATION_CONTROL_DATA))),
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
-		IID_PPV_ARGS(pAnimation->pControllerCBuffer.GetAddressOf())
+		IID_PPV_ARGS(pAnimation->m_pControllerCBuffer.GetAddressOf())
 	);
 
-	pAnimation->pControllerCBuffer->Map(0, NULL, reinterpret_cast<void**>(&pAnimation->pControllerDataMappedPtr));
+	pAnimation->m_pControllerCBuffer->Map(0, NULL, reinterpret_cast<void**>(&pAnimation->m_pControllerDataMappedPtr));
 
 	// Transform data Constant Buffer »ý¼º
 	pd3dDevice->CreateCommittedResource(
@@ -116,10 +128,10 @@ std::shared_ptr<Animation> Animation::LoadFromInfo(ComPtr<ID3D12Device14> pd3dDe
 		&CD3DX12_RESOURCE_DESC::Buffer(::AlignConstantBuffersize(sizeof(CB_ANIMATION_TRANSFORM_DATA))),
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
-		IID_PPV_ARGS(pAnimation->pBoneTransformCBuffer.GetAddressOf())
+		IID_PPV_ARGS(pAnimation->m_pBoneTransformCBuffer.GetAddressOf())
 	);
 
-	pAnimation->pBoneTransformCBuffer->Map(0, NULL, reinterpret_cast<void**>(&pAnimation->pBoneTransformMappedPtr));
+	pAnimation->m_pBoneTransformCBuffer->Map(0, NULL, reinterpret_cast<void**>(&pAnimation->m_pBoneTransformMappedPtr));
 
 	pAnimation->m_wpOwner = pOwner;
 

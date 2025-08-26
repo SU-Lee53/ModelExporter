@@ -57,7 +57,7 @@ struct CB_ANIMATION_TRANSFORM_DATA {
 
 class Animation {
 public:
-	void Update();
+	void UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
 
 public:
 	struct Data {
@@ -73,16 +73,19 @@ public:
 
 	std::vector<Data> m_AnimationDatas;
 
-	ComPtr<ID3D12Resource> pControllerCBuffer;
-	UINT8* pControllerDataMappedPtr;
+	ComPtr<ID3D12Resource> m_pControllerCBuffer;
+	UINT8* m_pControllerDataMappedPtr;
 
-	ComPtr<ID3D12Resource> pBoneTransformCBuffer;
-	UINT8* pBoneTransformMappedPtr;
+	ComPtr<ID3D12Resource> m_pBoneTransformCBuffer;
+	UINT8* m_pBoneTransformMappedPtr;
 
 	std::weak_ptr<GameObject> m_wpOwner;
 
 public:
 	static std::shared_ptr<Animation> LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const std::vector<ANIMATION_IMPORT_INFO>& infos, std::shared_ptr<GameObject> pOwner);
 
+
+public:
+	constexpr static UINT ANIMATION_DESCRIPTOR_COUNT_PER_DRAW = 2;
 
 };

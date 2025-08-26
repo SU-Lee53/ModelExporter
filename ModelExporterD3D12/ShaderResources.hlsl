@@ -72,12 +72,15 @@ cbuffer cbAnimationControllerData : register(b3)
     float fTimeElapsed;
 };
 
-struct AnimationTransforms
+cbuffer AnimationTransforms : register(b4)
 {
     float4x4 mtxTransforms[MAX_ANIMATION_KEYFRAMES];
 };
 
-StructuredBuffer<AnimationTransforms> gsbAnimationTransforms : register(t7);
+cbuffer BoneData : register(b5)
+{
+    int nTransformIndex;
+};
 
 
 
