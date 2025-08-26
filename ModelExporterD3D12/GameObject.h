@@ -33,6 +33,7 @@ struct OBJECT_IMPORT_INFO {
 
 
 	static std::map<std::string, BONE_IMPORT_INFO> boneMap;
+	static std::vector<BONE_IMPORT_INFO> boneList;
 
 };
 
@@ -86,8 +87,6 @@ private:
 	ComPtr<ID3D12DescriptorHeap> m_pd3dDescriptorHeap = nullptr;
 
 	constexpr static UINT DESCRIPTOR_COUNT_PER_DRAW = 9;
-	// cBuffer 2°³
-	// texture 6°³
 
 };
 

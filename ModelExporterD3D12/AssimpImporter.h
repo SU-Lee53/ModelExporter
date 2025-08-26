@@ -43,7 +43,6 @@ private:
 	std::string FormatMetaData(const aiMetadata& metaData, size_t idx);
 	std::string QuaryAndFormatMaterialData(const aiMaterial& material, const aiMaterialProperty& matProperty);
 
-
 private:
 	void CreateCommandList();
 	void CreateFence();
@@ -59,6 +58,11 @@ private:
 
 	XMFLOAT3 InterpolateVectorKeyframe(float fTime, aiVectorKey* keys, UINT nKeys);
 	XMFLOAT4 InterpolateQuaternionKeyframe(float fTime, aiQuatKey* keys, UINT nKeys);
+
+	int FindNodeIndexByName(std::string_view svBoneName);
+	void BuildNodeList(aiNode* node, int counter);
+	void BuildSkinData(const aiMesh& mesh);
+	std::pair<std::array<int,4>, std::array<float,4>> LoadSkinData(size_t nVertexID);
 
 	std::string ExportTexture(const aiTexture& texture);
 	HRESULT ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture);
@@ -76,7 +80,10 @@ private:
 	aiNode* m_rpRootNode = nullptr;
 	UINT m_nNodes = 0;
 
-	std::map<UINT, std::vector<std::pair<UINT ,float>>> m_Weights;
+	std::vector<BONE_IMPORT_INFO> m_boneInfos;
+	std::map<std::string, int> m_NodeNameIndexMap; 
+	std::map<std::string, int> m_BoneNameIndexMap; 
+	std::map<UINT, std::vector<std::pair<UINT, float>>> m_VertexWeights;
 
 private:
 	std::string m_strCurrentPath;

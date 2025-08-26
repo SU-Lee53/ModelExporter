@@ -2,6 +2,7 @@
 #include "GameObject.h"
 
 std::map<std::string, BONE_IMPORT_INFO> OBJECT_IMPORT_INFO::boneMap{};
+std::vector<BONE_IMPORT_INFO> OBJECT_IMPORT_INFO::boneList{};
 
 GameObject::GameObject()
 {

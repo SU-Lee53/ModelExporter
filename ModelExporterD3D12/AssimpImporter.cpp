@@ -112,19 +112,19 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 
 	m_nNodes = CountNodes(m_rpRootNode);
 
-	m_Weights.clear();
+	OBJECT_IMPORT_INFO::boneMap.clear();
+	OBJECT_IMPORT_INFO::boneList.clear();
 
-	for (int i = 0; i < m_rpScene->mNumMeshes; ++i) {
-		for (int j = 0; j < m_rpScene->mMeshes[i]->mNumBones; ++j) {
-			for (int k = 0; k < m_rpScene->mMeshes[i]->mBones[j]->mNumWeights; ++k) {
-				aiVertexWeight Weight = m_rpScene->mMeshes[i]->mBones[j]->mWeights[k];
-				m_Weights[Weight.mVertexId].emplace_back(Weight.mVertexId, Weight.mWeight);
-			}
-		}
-	}
+	m_NodeNameIndexMap.clear(); 
+	m_boneInfos.clear();
+	m_NodeNameIndexMap.clear();
+	m_BoneNameIndexMap.clear();
+	m_VertexWeights.clear();
+	BuildNodeList(m_rpRootNode, 0);
 
 	// Init Model
 	auto p = LoadObject(*m_rpRootNode, nullptr);
+	p->boneList = m_boneInfos;
 	ResetCommandList();
 	m_pLoadedObject = GameObject::LoadFromImporter(m_pd3dDevice, m_pd3dCommandList, p, nullptr);
 	ExcuteCommandList();
@@ -924,10 +924,98 @@ std::string AssimpImporter::FormatMetaData(const aiMetadata& metaData, size_t id
 	}
 }
 
+void AssimpImporter::BuildNodeList(aiNode* node, int counter)
+{
+	m_NodeNameIndexMap[node->mName.C_Str()] = counter;
+
+	for (UINT i = 0; i < node->mNumChildren; ++i)
+		BuildNodeList(node->mChildren[i], ++counter);
+}
+
+int AssimpImporter::FindNodeIndexByName(std::string_view svBoneName)
+{
+	std::string name{ svBoneName };
+	auto it = m_NodeNameIndexMap.find(name);
+	if (it != m_NodeNameIndexMap.end()) return it->second;
+	return -1;
+}
+
+void AssimpImporter::BuildSkinData(const aiMesh& mesh)
+{
+	for (UINT j = 0; j < mesh.mNumBones; ++j) {
+		aiBone* aiBonePtr = mesh.mBones[j];
+		std::string boneName(aiBonePtr->mName.C_Str());
+
+		// Bone Index 얻기
+		int boneIndex = 0;
+		if (m_BoneNameIndexMap.find(boneName) == m_BoneNameIndexMap.end()) {
+			boneIndex = (int)m_boneInfos.size();
+
+			BONE_IMPORT_INFO b;
+			b.strName = boneName;
+			b.nNodeIndex = FindNodeIndexByName(boneName);
+
+			XMMATRIX xmmtxOffset = XMLoadFloat4x4(&XMFLOAT4X4(&aiBonePtr->mOffsetMatrix.a1));
+			xmmtxOffset = XMMatrixTranspose(xmmtxOffset);
+			XMStoreFloat4x4(&b.xmf4x4Offset, xmmtxOffset);
+
+			m_boneInfos.push_back(b);
+			m_BoneNameIndexMap[boneName] = boneIndex;
+		}
+		else {
+			boneIndex = m_BoneNameIndexMap[boneName];
+		}
+
+		// 정점별 Weight 추가
+		for (UINT k = 0; k < aiBonePtr->mNumWeights; ++k) {
+			aiVertexWeight vw = aiBonePtr->mWeights[k];
+			UINT vId = vw.mVertexId;
+			float wVal = vw.mWeight;
+
+			m_VertexWeights[vId].emplace_back(boneIndex, wVal);
+		}
+	}
+}
+
+std::pair<std::array<int, 4>, std::array<float, 4>> AssimpImporter::LoadSkinData(size_t nVertexID)
+{
+	auto it = m_VertexWeights.find(nVertexID);
+	if (it == m_VertexWeights.end()) 
+		return { { -1, -1, -1, -1 }, {0.f, 0.f, 0.f, 0.f} };
+
+	auto& weights = it->second;
+
+	// 큰 weight 순으로 정렬
+	std::sort(weights.begin(), weights.end(),
+		[](auto& a, auto& b) { return a.second > b.second; });
+
+	std::array<int, 4> boneIndices{ 0,0,0,0 };
+	std::array<float, 4> boneWeights{ 0.f, 0.f, 0.f, 0.f };
+
+	int slot = 0;
+	for (auto& [boneIndex, weight] : weights) {
+		if (slot >= 4) break; // 최대 4개까지만
+		boneIndices[slot] = boneIndex;
+		boneWeights[slot] = weight;
+		slot++;
+	}
+
+	// normalize
+	float sum = 0.f;
+	for (int i = 0; i < 4; ++i) sum += boneWeights[i];
+	if (sum > 0.f) {
+		for (int i = 0; i < 4; ++i)
+			boneWeights[i] /= sum;
+	}
+
+	return { boneIndices, boneWeights };
+
+}
 
 MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 {
 	MESH_IMPORT_INFO info;
+	BuildSkinData(mesh);
 
 	info.strMeshName = mesh.mName.C_Str();
 
@@ -958,17 +1046,10 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 			info.xmf3BiTangents.push_back(XMFLOAT3(0.f, 0.f, 0.f));
 		}
 
-		std::array<int, 4> blendIndices{};
-		std::array<float, 4> blendWeights{};
+		auto [indices, weights] = LoadSkinData(i);
 
-		for (int j = 0; j < m_Weights[i].size(); ++j) {
-			if (j >= 4) break;
-			blendIndices[j] = m_Weights[i][j].first;
-			blendWeights[j] = m_Weights[i][j].second;
-		}
-
-		info.blendIndices.push_back(blendIndices);
-		info.blendWeights.push_back(blendWeights);
+		info.blendIndices.push_back(indices);
+		info.blendWeights.push_back(weights);
 
 		for (int j = 0; j < mesh.GetNumColorChannels(); ++j) {
 			info.xmf4Colors[j].push_back(XMFLOAT4(mesh.mColors[j][i].r, mesh.mColors[j][i].g, mesh.mColors[j][i].b, mesh.mColors[j][i].a));

@@ -14,18 +14,18 @@
 
 struct BONE_IMPORT_INFO {
 	std::string strName;
+	int nNodeIndex = -1;
 	XMFLOAT4X4 xmf4x4Offset;
 };
 
 
-class Bone {
+struct Bone {
 public:
 	std::string GetName() const { return m_strName; }
 	XMFLOAT4X4& GetOffsetMatrix() { return m_xmf4x4Offset; }
 
-
-private:
 	std::string m_strName;
+	int nNodeIndex = -1;
 	XMFLOAT4X4 m_xmf4x4Offset;	// model -> bone local
 
 	int m_nAnimationBoneIndex = -1;

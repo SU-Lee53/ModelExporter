@@ -1,3 +1,5 @@
+#ifndef _SHADER_RESOURCES_
+#define _SHADER_RESOURCES_
 
 struct VS_INPUT
 {
@@ -84,3 +86,4 @@ cbuffer BoneData : register(b5)
 
 
 
+#endif

@@ -80,6 +80,9 @@ public:
 	UINT8* m_pBoneTransformMappedPtr;
 
 	std::weak_ptr<GameObject> m_wpOwner;
+	std::vector<Bone> m_bones;
+
+	bool m_bPlay = false;
 
 public:
 	static std::shared_ptr<Animation> LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const std::vector<ANIMATION_IMPORT_INFO>& infos, std::shared_ptr<GameObject> pOwner);
