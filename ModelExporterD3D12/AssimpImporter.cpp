@@ -26,6 +26,98 @@ AssimpImporter::~AssimpImporter()
 {
 }
 
+void AssimpImporter::Run()
+{
+	ImGui::Begin("AssimpImporter");
+
+	static std::string s;
+	ImGui::InputText("Model Path", &s);
+	ImGui::Text("%s - Length : %d", s.c_str(), s.length());
+	if (ImGui::Button("Load")) {
+		LoadFBXFilesFromPath(s);
+	}
+
+	ImGui::Text("%s", m_bLoaded ? "Model Loaded" : m_strError.c_str());
+	if (m_bLoaded) {
+		ImGui::Text("Loaded Model Path : %s", m_strPath.c_str());
+	}
+
+	if (ImGui::Button("DIFFUSED")) {
+		m_eShaderType = SHADER_TYPE_DIFFUSED;
+	}
+
+	if (ImGui::Button("ALBEDO")) {
+		m_eShaderType = SHADER_TYPE_ALBEDO;
+	}
+
+
+	if (ImGui::BeginListBox(("LoadTargets"))) {
+		for (int i = 0; i < m_strFBXFilesFromPath.size(); ++i) {
+			const bool bSelected = (m_ItemSelected == i);
+			if (ImGui::Selectable(m_strFBXFilesFromPath[i].c_str(), bSelected)) {
+				m_ItemSelected = i;
+			}
+
+			if (m_ItemHighlighted && ImGui::IsItemHovered()) {
+				m_ItemHighlighted = i;
+			}
+
+			if (bSelected) {
+				ImGui::SetItemDefaultFocus();
+			}
+		}
+
+		ImGui::EndListBox();
+	}
+
+	if (ImGui::Button("Load Model")) {
+		std::string strModelPath = std::format("{}/{}", m_strCurrentPath, m_strFBXFilesFromPath[m_ItemSelected]);
+		m_bLoaded = LoadModel(strModelPath);
+	}
+
+	ImGui::NewLine();
+
+	if (ImGui::BeginTabBar("")) {
+		if (ImGui::BeginTabItem("Scene Info")) {
+			if (m_rpScene) {
+				ShowSceneAttribute();
+			}
+			else {
+				ImGui::Text("Scene Not Loaded");
+			}
+			ImGui::EndTabItem();
+		}
+
+		if (ImGui::BeginTabItem("Node Info")) {
+			if (m_rpRootNode) {
+				ShowNodeAll();
+			}
+			else {
+				ImGui::Text("Node Not Loaded");
+			}
+			ImGui::EndTabItem();
+		}
+
+		if (m_pLoadedObject) {
+			if (ImGui::BeginTabItem("Loaded Model Hierarchy")) {
+				if (m_pLoadedObject) {
+					m_pLoadedObject->ShowObjInfo();
+				}
+				else {
+					ImGui::Text("Model Not Loaded");
+				}
+				ImGui::EndTabItem();
+			}
+		}
+
+		ImGui::EndTabBar();
+	}
+
+	ImGui::End();
+
+	m_upCamera->Update();
+}
+
 void AssimpImporter::LoadFBXFilesFromPath(std::string_view svPath)
 {
 	m_strFBXFilesFromPath.clear();
@@ -112,156 +204,683 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 
 	m_nNodes = CountNodes(m_rpRootNode);
 
-	OBJECT_IMPORT_INFO::boneMap.clear();
-	OBJECT_IMPORT_INFO::boneList.clear();
+	// 1) Skeleton & VertexWeights (Scene 전역에서 1회)
+	CollectSkeletonFromScene(m_rpScene);
+	FillGlobalBoneMapToObjectStatic(); // OBJECT_IMPORT_INFO::boneMap 채움
 
-	m_NodeNameIndexMap.clear(); 
-	m_boneInfos.clear();
-	m_NodeNameIndexMap.clear();
-	m_BoneNameIndexMap.clear();
-	m_VertexWeights.clear();
-	BuildNodeList(m_rpRootNode, 0);
+	// 2) 계층 트리(OBJECT_IMPORT_INFO) 생성
+	auto root = BuildObjectHierarchy(m_rpScene->mRootNode, m_rpScene, nullptr);
+
+	// 3) Animation 로드(30fps 샘플링) → 루트에만 채워 둠
+	root->animationInfos = LoadAnimationData(m_rpScene, 30.0f);
 
 	// Init Model
-	auto p = LoadObject(*m_rpRootNode, nullptr);
-	p->boneList = m_boneInfos;
 	ResetCommandList();
-	m_pLoadedObject = GameObject::LoadFromImporter(m_pd3dDevice, m_pd3dCommandList, p, nullptr);
+	m_pLoadedObject = GameObject::LoadFromImporter(m_pd3dDevice, m_pd3dCommandList, root, nullptr);
 	ExcuteCommandList();
 
 
 	return true;
 }
 
-std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent)
+void AssimpImporter::CollectSkeletonFromScene(const aiScene* scene)
 {
-	std::shared_ptr<OBJECT_IMPORT_INFO> pObjInfo = std::make_shared<OBJECT_IMPORT_INFO>();
+	m_bones.clear();
+	m_boneNameToIndex.clear();
+	m_meshVertexWeights.clear();
 
-	pObjInfo->strNodeName = node.mName.C_Str();
+	// 모든 Mesh 순회
+	for (unsigned m = 0; m < scene->mNumMeshes; ++m)
+	{
+		const aiMesh* mesh = scene->mMeshes[m];
 
-	XMMATRIX xmmtxTransform = XMLoadFloat4x4(&XMFLOAT4X4(&node.mTransformation.a1));
-	xmmtxTransform = XMMatrixTranspose(xmmtxTransform);
-	XMStoreFloat4x4(&pObjInfo->xmf4x4Bone, xmmtxTransform);
-	pObjInfo->pParent = m_pParent;
+		// mesh 로컬의 vertexId → (boneIndex, weight) 목록
+		auto& vtxWeights = m_meshVertexWeights[mesh]; // 새 map 생성
 
-	for (int i = 0; i < node.mNumMeshes; ++i) {
-		aiMesh* pMesh = m_rpScene->mMeshes[node.mMeshes[i]];
-		pObjInfo->MeshMaterialInfoPairs.emplace_back(LoadMeshData(*pMesh), LoadMaterialData(*m_rpScene->mMaterials[pMesh->mMaterialIndex]));
-		if (pMesh->HasBones()) {
-			/*pObjInfo->boneInfos.reserve(pMesh->mNumBones);
-			for (int j = 0; j < pMesh->mNumBones; ++j) {
-				pObjInfo->boneInfos.push_back(LoadBoneData(*pMesh->mBones[j]));
-			}*/
+		for (unsigned j = 0; j < mesh->mNumBones; ++j)
+		{
+			const aiBone* aiBonePtr = mesh->mBones[j];
+			string boneName(aiBonePtr->mName.C_Str());
 
-			for (int j = 0; j < pMesh->mNumBones; ++j) {
-				OBJECT_IMPORT_INFO::boneMap.insert({ pMesh->mBones[j]->mName.C_Str(), LoadBoneData(*pMesh->mBones[j]) });
+			int boneIndex = 0;
+			auto it = m_boneNameToIndex.find(boneName);
+			if (it == m_boneNameToIndex.end())
+			{
+				boneIndex = (int)m_bones.size();
+
+				BoneInfoInternal b{};
+				b.name = boneName;
+				b.nodeIndex = FindNodeIndexByName(scene->mRootNode, boneName);
+				b.offsetRow = ::aiMatrixToXMFLOAT4X4(aiBonePtr->mOffsetMatrix); // row-major 저장
+
+				m_bones.push_back(b);
+				m_boneNameToIndex[boneName] = boneIndex;
+			}
+			else {
+				boneIndex = it->second;
 			}
 
+			// 정점별 Weight 누적 (mesh-local vertex index)
+			for (unsigned k = 0; k < aiBonePtr->mNumWeights; ++k) {
+				const aiVertexWeight vw = aiBonePtr->mWeights[k];
+				vtxWeights[vw.mVertexId].push_back({ boneIndex, vw.mWeight });
+			}
 		}
 	}
-
-	pObjInfo->animationInfos.reserve(m_rpScene->mNumAnimations);
-	for (int i = 0; i < m_rpScene->mNumAnimations; ++i) {
-		pObjInfo->animationInfos.push_back(LoadAnimationData(*m_rpScene->mAnimations[i]));
-	}
-
-	for (int i = 0; i < node.mNumChildren; ++i) {
-		pObjInfo->pChildren.push_back(LoadObject(*node.mChildren[i], pObjInfo));
-	}
-
-	return pObjInfo;
 }
 
-void AssimpImporter::Run()
+void AssimpImporter::FillGlobalBoneMapToObjectStatic()
 {
-	ImGui::Begin("AssimpImporter");
+	// 프로젝트에 존재하는 정적 맵 채우기 (GameObject::LoadFromImporter에서 쓰던 그 맵)
+	OBJECT_IMPORT_INFO::boneMap.clear();
+	for (auto& b : m_bones)
+	{
+		BONE_IMPORT_INFO out{};
+		out.strName = b.name;
+		out.nNodeIndex = b.nodeIndex;
+		out.xmf4x4Offset = b.offsetRow; // 이미 row-major
 
-	static std::string s;
-	ImGui::InputText("Model Path", &s);
-	ImGui::Text("%s - Length : %d", s.c_str(), s.length());
-	if (ImGui::Button("Load")) {
-		LoadFBXFilesFromPath(s);
+		OBJECT_IMPORT_INFO::boneMap[out.strName] = out;
+	}
+}
+
+std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::BuildObjectHierarchy(const aiNode* node, const aiScene* scene, std::shared_ptr<OBJECT_IMPORT_INFO> parent)
+{
+	auto obj = std::make_shared<OBJECT_IMPORT_INFO>();
+	obj->pParent = parent;
+	obj->strNodeName = node->mName.C_Str();
+
+	// aiNode::mTransformation (로컬) → row-major
+	obj->xmf4x4Bone = ::aiMatrixToXMFLOAT4X4(node->mTransformation);
+
+	// 이 노드가 보유한 Mesh들
+	for (unsigned mi = 0; mi < node->mNumMeshes; ++mi)
+	{
+		const aiMesh* mesh = scene->mMeshes[node->mMeshes[mi]];
+		MESH_IMPORT_INFO meshInfo = LoadMeshData(*mesh);
+
+		MATERIAL_IMPORT_INFO matInfo = LoadMaterialData(*m_rpScene->mMaterials[mesh->mMaterialIndex]); // 필요 시 material 로딩 채워 넣기
+		obj->MeshMaterialInfoPairs.emplace_back(std::move(meshInfo), std::move(matInfo));
 	}
 
-	ImGui::Text("%s", m_bLoaded ? "Model Loaded" : m_strError.c_str());
-	if (m_bLoaded) {
-		ImGui::Text("Loaded Model Path : %s", m_strPath.c_str());
+	// 자식 재귀
+	obj->pChildren.reserve(node->mNumChildren);
+	for (unsigned i = 0; i < node->mNumChildren; ++i)
+		obj->pChildren.push_back(BuildObjectHierarchy(node->mChildren[i], scene, obj));
+
+	return obj;
+}
+
+MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
+{
+	MESH_IMPORT_INFO info;
+
+	info.strMeshName = mesh.mName.C_Str();
+
+	// 1) 정점 속성
+	uint32_t nVertices = mesh.mNumVertices;
+	info.xmf3Positions.reserve(nVertices);
+	info.xmf3Normals.reserve(nVertices);
+	info.xmf3Tangents.reserve(nVertices);
+	info.xmf3BiTangents.reserve(nVertices);
+
+	for (auto color : info.xmf4Colors) {
+		color.reserve(nVertices);
 	}
 
-	if (ImGui::Button("DIFFUSED")) {
-		m_eShaderType = SHADER_TYPE_DIFFUSED;
-	}
-
-	if (ImGui::Button("ALBEDO")) {
-		m_eShaderType = SHADER_TYPE_ALBEDO;
+	for (auto texCoord : info.xmf2TexCoords) {
+		texCoord.reserve(nVertices);
 	}
 
 
-	if (ImGui::BeginListBox(("LoadTargets"))) {
-		for (int i = 0; i < m_strFBXFilesFromPath.size(); ++i) {
-			const bool bSelected = (m_ItemSelected == i);
-			if (ImGui::Selectable(m_strFBXFilesFromPath[i].c_str(), bSelected)) {
-				m_ItemSelected = i;
-			}
-
-			if (m_ItemHighlighted && ImGui::IsItemHovered()) {
-				m_ItemHighlighted = i;
-			}
-
-			if (bSelected) {
-				ImGui::SetItemDefaultFocus();
-			}
+	for (int i = 0; i < nVertices; ++i) {
+		info.xmf3Positions.push_back(XMFLOAT3(mesh.mVertices[i].x, mesh.mVertices[i].y, mesh.mVertices[i].z));
+		mesh.HasNormals() ? info.xmf3Normals.push_back(XMFLOAT3(mesh.mNormals[i].x, mesh.mNormals[i].y, mesh.mNormals[i].z)) : info.xmf3Normals.push_back(XMFLOAT3(0.f, 0.f, 0.f));
+		if (mesh.HasTangentsAndBitangents()) {
+			info.xmf3Tangents.push_back(XMFLOAT3(mesh.mTangents[i].x, mesh.mTangents[i].y, mesh.mTangents[i].z));
+			info.xmf3BiTangents.push_back(XMFLOAT3(mesh.mBitangents[i].x, mesh.mBitangents[i].y, mesh.mBitangents[i].z));
+		}
+		else {
+			info.xmf3Tangents.push_back(XMFLOAT3(0.f, 0.f, 0.f));
+			info.xmf3BiTangents.push_back(XMFLOAT3(0.f, 0.f, 0.f));
 		}
 
-		ImGui::EndListBox();
+		for (int j = 0; j < mesh.GetNumColorChannels(); ++j) {
+			info.xmf4Colors[j].push_back(XMFLOAT4(mesh.mColors[j][i].r, mesh.mColors[j][i].g, mesh.mColors[j][i].b, mesh.mColors[j][i].a));
+		}
+
+		for (int j = 0; j < mesh.GetNumUVChannels(); ++j) {
+			assert(mesh.mNumUVComponents[j] == 2);
+			info.xmf2TexCoords[j].push_back(XMFLOAT2(mesh.mTextureCoords[j][i].x, mesh.mTextureCoords[j][i].y));
+		}
+
 	}
 
-	if (ImGui::Button("Load Model")) {
-		std::string strModelPath = std::format("{}/{}", m_strCurrentPath, m_strFBXFilesFromPath[m_ItemSelected]);
-		m_bLoaded = LoadModel(strModelPath);
+	// 2) 인덱스
+	info.uiIndices.reserve(mesh.mNumFaces);
+	for (int i = 0; i < mesh.mNumFaces; ++i) {
+		for (int j = 0; j < mesh.mFaces[i].mNumIndices; ++j) {
+			info.uiIndices.push_back(mesh.mFaces[i].mIndices[j]);
+		}
 	}
 
-	ImGui::NewLine();
+	// 3) 스키닝: Mesh-local vertexId → (boneIndex,weight) 목록 꺼내서 Top4/Normalize
+	info.blendIndices.resize(mesh.mNumVertices);
+	info.blendWeights.resize(mesh.mNumVertices, XMFLOAT4(0, 0, 0, 0));
 
-	if (ImGui::BeginTabBar("")){
-		if (ImGui::BeginTabItem("Scene Info")) {
-			if (m_rpScene) {
-				ShowSceneAttribute();
-			}
-			else {
-				ImGui::Text("Scene Not Loaded");
-			}
-			ImGui::EndTabItem();
-		}
-		
-		if (ImGui::BeginTabItem("Node Info")) {
-			if (m_rpRootNode) {
-				ShowNodeAll();
-			}
-			else {
-				ImGui::Text("Node Not Loaded");
-			}
-			ImGui::EndTabItem();
-		}
-		
-		if (m_pLoadedObject) {
-			if (ImGui::BeginTabItem("Loaded Model Hierarchy")) {
-				if (m_pLoadedObject) {
-					m_pLoadedObject->ShowObjInfo();
-				}
-				else {
-					ImGui::Text("Model Not Loaded");
-				}
-				ImGui::EndTabItem();
-			}
+	auto& vtxWeights = m_meshVertexWeights[&mesh]; // CollectSkeletonFromScene 에서 채움
+
+	for (unsigned v = 0; v < mesh.mNumVertices; ++v)
+	{
+		auto it = vtxWeights.find(v);
+		if (it == vtxWeights.end()) {
+			info.blendIndices[v] = XMINT4(0, 0, 0, 0);
+			continue;
 		}
 
-		ImGui::EndTabBar();
+		auto weights = it->second; // copy
+		std::sort(weights.begin(), weights.end(),
+			[](const VtxWeight& a, const VtxWeight& b) { return a.w > b.w; });
+
+		// Top4
+		XMINT4 idx(0, 0, 0, 0);
+		XMFLOAT4 w(0, 0, 0, 0);
+
+		int n = (int)std::min<size_t>(4, weights.size());
+		float sum = 0.f;
+		for (int i = 0; i < n; ++i) {
+			(&idx.x)[i] = (unsigned)weights[i].bone;
+			(&w.x)[i] = weights[i].w;
+			sum += weights[i].w;
+		}
+		if (sum > 0.00001f) {
+			for (int i = 0; i < n; ++i) (&w.x)[i] /= sum;
+		}
+
+		info.blendIndices[v] = idx;
+		info.blendWeights[v] = w;
+	}
+
+	return info;
+}
+
+MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& material)
+{
+	MATERIAL_IMPORT_INFO info{};
+
+	info.strMaterialName = material.GetName().C_Str();
+
+	aiColor4D aicValue{};
+	if (material.Get(AI_MATKEY_COLOR_DIFFUSE, aicValue) == AI_SUCCESS) {
+		info.xmf4AlbedoColor = XMFLOAT4(&aicValue.r);
+	}
+
+	if (material.Get(AI_MATKEY_COLOR_AMBIENT, aicValue) == AI_SUCCESS) {
+		info.xmf4AmbientColor = XMFLOAT4(&aicValue.r);
+	}
+
+	if (material.Get(AI_MATKEY_COLOR_SPECULAR, aicValue) == AI_SUCCESS) {
+		info.xmf4SpecularColor = XMFLOAT4(&aicValue.r);
+	}
+
+	if (material.Get(AI_MATKEY_COLOR_EMISSIVE, aicValue) == AI_SUCCESS) {
+		info.xmf4EmissiveColor = XMFLOAT4(&aicValue.r);
+	}
+
+	float fValue{};
+	if (material.Get(AI_MATKEY_SHININESS, fValue) == AI_SUCCESS) {
+		info.fGlossiness = fValue;
+	}
+
+	if (material.Get(AI_MATKEY_ROUGHNESS_FACTOR, fValue) == AI_SUCCESS) {
+		info.fSmoothness = 1 - fValue;
+	}
+
+	if (material.Get(AI_MATKEY_METALLIC_FACTOR, fValue) == AI_SUCCESS) {
+		info.fMetallic = fValue;
+	}
+
+	if (material.Get(AI_MATKEY_REFLECTIVITY, fValue) == AI_SUCCESS) {
+		info.fGlossyReflection = fValue;
+	}
+
+	// Texture?
+
+	std::vector<aiTextureType> textureTypes = {
+		aiTextureType_DIFFUSE,
+		aiTextureType_SPECULAR,
+		aiTextureType_METALNESS,
+		aiTextureType_NORMALS,
+		aiTextureType_EMISSIVE,
+	};
+
+	aiString aistrTexturePath{};
+	
+	if (material.GetTexture(aiTextureType_DIFFUSE, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strAlbedoMapName = ExportTexture(*pEmbeddedTexture);
+		}
 	}
 	
-	ImGui::End();
+	if (material.GetTexture(aiTextureType_SPECULAR, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strSpecularMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+	
+	if (material.GetTexture(aiTextureType_METALNESS, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strMetallicMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+	
+	if (material.GetTexture(aiTextureType_NORMALS, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strNormalMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+	
+	if (material.GetTexture(aiTextureType_EMISSIVE, 0, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strEmissionMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
 
-	m_upCamera->Update();
+	if (material.GetTexture(aiTextureType_DIFFUSE, 1, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strDetailAlbedoMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+
+	if (material.GetTexture(aiTextureType_NORMALS, 1, &aistrTexturePath) == AI_SUCCESS) {
+		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
+		if (pEmbeddedTexture) {
+			info.strDetailNormalMapName = ExportTexture(*pEmbeddedTexture);
+		}
+	}
+
+	return info;
+}
+
+BONE_IMPORT_INFO AssimpImporter::LoadBoneData(const aiBone& bone)
+{
+	BONE_IMPORT_INFO info;
+
+	info.strName = bone.mName.C_Str();
+
+	info.xmf4x4Offset = XMFLOAT4X4(&bone.mOffsetMatrix.a1);
+
+	return info;
+}
+
+std::vector<ANIMATION_IMPORT_INFO> AssimpImporter::LoadAnimationData(const aiScene* scene, float fTargetFPS)
+{
+	/* 
+		- 애니메이션이 30프레임이라고 가정하고 각 Key 들을 샘플링
+	*/
+	std::vector<ANIMATION_IMPORT_INFO> out;
+	if (!m_rpScene || m_rpScene->mNumAnimations == 0) return out;
+
+	for (unsigned a = 0; a < m_rpScene->mNumAnimations; ++a)
+	{
+		const aiAnimation* anim = m_rpScene->mAnimations[a];
+
+		ANIMATION_IMPORT_INFO clip{};
+		clip.strAnimationName = anim->mName.length ? anim->mName.C_Str() : ("Anim_" + std::to_string(a));
+		clip.fDuration = (float)anim->mDuration;
+		clip.fTicksPerSecond = (float)(anim->mTicksPerSecond != 0 ? anim->mTicksPerSecond : 25.0);
+		clip.fFrameRate = fTargetFPS;
+
+		float durationSec = clip.fDuration / clip.fTicksPerSecond;
+		const unsigned frameCount = std::max(1u, (unsigned)std::ceil(durationSec * fTargetFPS));
+		clip.animationDatas.reserve(anim->mNumChannels);
+
+		for (unsigned c = 0; c < anim->mNumChannels; ++c)
+		{
+			const aiNodeAnim* ch = anim->mChannels[c];
+
+			AnimChannel chOut{};
+			chOut.strName = ch->mNodeName.C_Str();
+			chOut.keyframes.reserve(frameCount);
+
+			for (unsigned f = 0; f < frameCount; ++f)
+			{
+				float tSec = (float)f / fTargetFPS;
+				float tick = tSec * clip.fTicksPerSecond;
+
+				AnimKeyframe kf{};
+				kf.fTime = tSec;
+
+				if (ch->mNumPositionKeys > 0)
+					kf.xmf3PositionKey = InterpolateVectorKeyframe(tick, ch->mPositionKeys, ch->mNumPositionKeys);
+				if (ch->mNumScalingKeys > 0)
+					kf.xmf3ScaleKey = InterpolateVectorKeyframe(tick, ch->mScalingKeys, ch->mNumScalingKeys);
+				if (ch->mNumRotationKeys > 0)
+					kf.xmf4RotationKey = InterpolateQuaternionKeyframe(tick, ch->mRotationKeys, ch->mNumRotationKeys);
+
+				chOut.keyframes.push_back(kf);
+			}
+
+			clip.animationDatas.push_back(std::move(chOut));
+		}
+
+		out.push_back(std::move(clip));
+	}
+
+	return out;
+
+}
+
+DirectX::XMFLOAT3 AssimpImporter::InterpolateVectorKeyframe(float fTime, aiVectorKey* keys, UINT nKeys)
+{
+	if (nKeys == 1)
+		return XMFLOAT3(0, 0, 0);
+	
+	if (nKeys == 1)
+		return XMFLOAT3((float)keys[0].mValue.x, (float)keys[0].mValue.y, (float)keys[0].mValue.z);
+
+	// Find current index
+	int nIndex = 0;
+	while (nIndex + 1 < nKeys && fTime >= (float)keys[nIndex + 1].mTime) {
+		nIndex++;
+	}
+
+	int nNextIndex = nIndex + 1;
+	float fdelta = (float)(keys[nNextIndex].mTime - keys[nIndex].mTime);
+	float fFactor = (fTime - (float)keys[nIndex].mTime) / fdelta;
+
+	XMFLOAT3 xmf3Start((float)keys[nIndex].mValue.x, (float)keys[nIndex].mValue.y, (float)keys[nIndex].mValue.z);
+	XMFLOAT3 xmf3End((float)keys[nNextIndex].mValue.x, (float)keys[nNextIndex].mValue.y, (float)keys[nNextIndex].mValue.z);
+
+	XMVECTOR xmvStart = XMLoadFloat3(&xmf3Start);
+	XMVECTOR xmvEnd = XMLoadFloat3(&xmf3End);
+	
+	XMVECTOR xmvResult = XMVectorAdd(xmvStart, XMVectorScale(XMVectorSubtract(xmvEnd, xmvStart), fFactor));
+	
+	XMFLOAT3 xmf3Result;
+	XMStoreFloat3(&xmf3Result, xmvResult);
+	return xmf3Result;
+}
+
+DirectX::XMFLOAT4 AssimpImporter::InterpolateQuaternionKeyframe(float fTime, aiQuatKey* keys, UINT nKeys)
+{
+	if (nKeys == 0)
+		return XMFLOAT4(0, 0, 0, 1);
+	
+	if (nKeys == 1)
+		return XMFLOAT4(keys[0].mValue.x, keys[0].mValue.y, keys[0].mValue.z, keys[0].mValue.w);
+
+	// Find current index
+	int nIndex = 0;
+	while (nIndex + 1 < nKeys && fTime >= (float)keys[nIndex + 1].mTime) {
+		nIndex++;
+	}
+
+	int nNextIndex = nIndex + 1;
+	float fdelta = (float)(keys[nNextIndex].mTime - keys[nIndex].mTime);
+	float fFactor = (fTime - (float)keys[nIndex].mTime) / fdelta;
+
+	aiQuaternion aiqStart = keys[nIndex].mValue;
+	aiQuaternion aiqEnd = keys[nNextIndex].mValue;
+	aiQuaternion aiqResult;
+	aiQuaternion::Interpolate(aiqResult, aiqStart, aiqEnd, fFactor);
+	aiqResult.Normalize();
+
+	return XMFLOAT4(aiqResult.x, aiqResult.y, aiqResult.z, aiqResult.w);
+}
+
+int AssimpImporter::FindNodeIndexByName(const aiNode* root, std::string_view svBoneName)
+{
+	if (!root) return -1;
+	if (svBoneName == root->mName.C_Str()) return 1; // 필요 시 노드 인덱스 테이블로 치환 가능
+	for (unsigned i = 0; i < root->mNumChildren; ++i) {
+		int idx = FindNodeIndexByName(root->mChildren[i], svBoneName);
+		if (idx >= 0) return idx;
+	}
+	return -1;
+}
+
+std::string AssimpImporter::ExportTexture(const aiTexture& texture)
+{
+	fs::path curPath{ m_strPath };
+	std::string strTextureExportPath = std::format("{}/{} Textures", m_strCurrentPath, curPath.stem().string());
+
+	fs::path pathFromEmbeddedTexture{ texture.mFilename.C_Str() };
+	fs::path exportDirectoryPath{ strTextureExportPath };
+	fs::path savePath{ std::format("{}/{}", exportDirectoryPath.string(), pathFromEmbeddedTexture.filename().string()) };
+
+	if (fs::exists(savePath)) {
+		return savePath.string();
+	}
+
+	if (!fs::exists(exportDirectoryPath)) {
+		try {
+			fs::create_directories(exportDirectoryPath);
+		}
+		catch (const std::exception& e) {
+			SHOW_ERROR(e.what());
+		}
+	}
+
+	HRESULT hr;
+	if (curPath.extension().string() == ".dds") {
+		hr = ExportDDSFile(savePath.wstring(), texture);
+	}
+	else {
+		hr = ExportWICFile(savePath.wstring(), texture);
+	}
+
+	if (FAILED(hr)) {
+		__debugbreak();
+	}
+
+
+	return savePath.string();
+}
+
+HRESULT AssimpImporter::ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture)
+{
+	DirectX::ScratchImage scratchImg{};
+	DirectX::TexMetadata  metaData{};
+
+	// mHeight == 0 인 경우 압축된 데이터임
+	if (texture.mHeight == 0) {
+		HRESULT hr = ::LoadFromDDSMemory(
+			reinterpret_cast<const uint8_t*>(texture.pcData),
+			(size_t)texture.mWidth,
+			DDS_FLAGS_NONE,
+			&metaData,
+			scratchImg
+		);
+
+		if (FAILED(hr)) {
+			__debugbreak();
+			return S_FALSE;
+		}
+	}
+	else {
+		DirectX::Image img{};
+		img.width = texture.mWidth;
+		img.height = texture.mHeight;
+		img.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		img.rowPitch = size_t(texture.mWidth) * 4;
+		img.slicePitch = img.rowPitch * texture.mHeight;
+		img.pixels = const_cast<uint8_t*>(
+			reinterpret_cast<const uint8_t*>(texture.pcData));
+
+		scratchImg.Initialize2D(img.format, img.width, img.height, 1, 1);
+		memcpy(scratchImg.GetPixels(), img.pixels, img.slicePitch);
+		metaData = scratchImg.GetMetadata();
+	}
+
+	GUID containerFormat;
+	GetContainerFormat(wsvSavePath, containerFormat);
+
+	return ::SaveToDDSFile(
+		scratchImg.GetImages(),
+		scratchImg.GetImageCount(),
+		scratchImg.GetMetadata(),
+		DirectX::DDS_FLAGS_NONE,
+		wsvSavePath.data()
+	);
+}
+
+HRESULT AssimpImporter::ExportWICFile(std::wstring_view wsvSavePath, const aiTexture& texture)
+{
+	DirectX::ScratchImage scratchImg{};
+
+	// mHeight == 0 인 경우 압축된 데이터임
+	if (texture.mHeight == 0) {
+		HRESULT hr = ::LoadFromWICMemory(
+			reinterpret_cast<const uint8_t*>(texture.pcData),
+			(size_t)texture.mWidth,
+			::WIC_FLAGS_NONE,
+			nullptr,
+			scratchImg,
+			nullptr
+		);
+
+		if (FAILED(hr)) {
+			__debugbreak();
+			return S_FALSE;
+		}
+	}
+	else {
+		DirectX::Image img = {};
+		img.width = texture.mWidth;
+		img.height = texture.mHeight;
+		img.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		img.rowPitch = size_t(texture.mWidth * 4);
+		img.slicePitch = img.rowPitch * texture.mHeight;
+		img.pixels = reinterpret_cast<uint8_t*>(texture.pcData);
+
+		scratchImg.Initialize2D(img.format, img.width, img.height, 1, 1);
+		memcpy(scratchImg.GetPixels(), img.pixels, img.slicePitch);
+	}
+
+	GUID containerFormat;
+	GetContainerFormat(wsvSavePath, containerFormat);
+
+	return ::SaveToWICFile(
+		scratchImg.GetImages(),
+		scratchImg.GetImageCount(),
+		DirectX::WIC_FLAGS_NONE,
+		containerFormat,
+		wsvSavePath.data()
+	);
+
+}
+
+void AssimpImporter::GetContainerFormat(std::wstring_view wsvSaveName, GUID& formatGUID)
+{
+	fs::path savePath{ wsvSaveName };
+	std::string format = savePath.extension().string();
+
+	if (format == ".png") {
+		formatGUID = GUID_ContainerFormatPng;
+	}
+	else if (format == ".jpg" || format == ".jpeg") {
+		formatGUID = GUID_ContainerFormatJpeg;
+	}
+	else if (format == ".bmp") {
+		formatGUID = GUID_ContainerFormatBmp;
+	}
+	else if (format == ".tif" || format == ".tiff") {
+		formatGUID = GUID_ContainerFormatTiff;
+	}
+	else if (format == ".gif") {
+		formatGUID = GUID_ContainerFormatGif;
+	}
+	else if (format == ".wmp") {
+		formatGUID = GUID_ContainerFormatWmp;
+	}
+	else if (format == ".heif") {
+		formatGUID = GUID_ContainerFormatHeif;
+	}
+}
+
+#pragma region D3DandRender
+
+void AssimpImporter::CreateCommandList()
+{
+	HRESULT hr{};
+
+	// Create Command Queue
+	D3D12_COMMAND_QUEUE_DESC d3dCommandQueueDesc{};
+	::ZeroMemory(&d3dCommandQueueDesc, sizeof(D3D12_COMMAND_QUEUE_DESC));
+	{
+		d3dCommandQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+		d3dCommandQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+	}
+	hr = m_pd3dDevice->CreateCommandQueue(&d3dCommandQueueDesc, IID_PPV_ARGS(m_pd3dCommandQueue.GetAddressOf()));
+	if (FAILED(hr)) {
+		SHOW_ERROR("Failed to create CommandQueue");
+	}
+
+	// Create Command Allocator
+	hr = m_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pd3dCommandAllocator.GetAddressOf()));
+	if (FAILED(hr)) {
+		SHOW_ERROR("Failed to create CommandAllocator");
+	}
+
+	// Create Command List
+	hr = m_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pd3dCommandAllocator.Get(), NULL, IID_PPV_ARGS(m_pd3dCommandList.GetAddressOf()));
+	if (FAILED(hr)) {
+		SHOW_ERROR("Failed to create CommandList");
+	}
+
+	// Close Command List(default is opened)
+	hr = m_pd3dCommandList->Close();
+}
+
+void AssimpImporter::CreateFence()
+{
+	HRESULT hr{};
+
+	hr = m_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_pd3dFence.GetAddressOf()));
+	if (FAILED(hr)) {
+		SHOW_ERROR("Failed to create fence");
+	}
+
+	m_hFenceEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
+}
+
+void AssimpImporter::WaitForGPUComplete()
+{
+	UINT64 nFenceValue = ++m_nFenceValue;
+	HRESULT hResult = m_pd3dCommandQueue->Signal(m_pd3dFence.Get(), nFenceValue);
+	if (m_pd3dFence->GetCompletedValue() < nFenceValue)
+	{
+		hResult = m_pd3dFence->SetEventOnCompletion(nFenceValue, m_hFenceEvent);
+		::WaitForSingleObject(m_hFenceEvent, INFINITE);
+	}
+}
+
+void AssimpImporter::ExcuteCommandList()
+{
+	m_pd3dCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { m_pd3dCommandList.Get() };
+	m_pd3dCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	WaitForGPUComplete();
+}
+
+void AssimpImporter::ResetCommandList()
+{
+	HRESULT hr;
+	hr = m_pd3dCommandAllocator->Reset();
+	hr = m_pd3dCommandList->Reset(m_pd3dCommandAllocator.Get(), NULL);
+	if (FAILED(hr)) {
+		SHOW_ERROR("Faied to reset CommandList");
+		__debugbreak();
+	}
 }
 
 void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
@@ -275,6 +894,11 @@ void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<I
 		m_pLoadedObject->Render(pDevice, pd3dRenderCommandList);
 	}
 }
+
+#pragma endregion
+
+#pragma region PrintToImGui
+
 
 void AssimpImporter::ShowSceneAttribute()
 {
@@ -370,35 +994,35 @@ std::string AssimpImporter::QuaryAndFormatMaterialData(const aiMaterial& materia
 {
 	std::string matData;
 	switch (matProperty.mType) {
-	case aiPTI_Float :
+	case aiPTI_Float:
 	{
 		ai_real f;
 		material.Get(matProperty.mKey.C_Str(), matProperty.mSemantic, matProperty.mIndex, f);
 		matData = std::format("{}", f);
 		break;
 	}
-	case aiPTI_Double :
+	case aiPTI_Double:
 	{
 		ai_real f;
 		material.Get(matProperty.mKey.C_Str(), matProperty.mSemantic, matProperty.mIndex, f);
 		matData = std::format("{}", f);
 		break;
 	}
-	case aiPTI_String :
+	case aiPTI_String:
 	{
 		aiString str;
 		material.Get(matProperty.mKey.C_Str(), matProperty.mSemantic, matProperty.mIndex, str);
 		matData = std::format("{}", str.C_Str());
 		break;
 	}
-	case aiPTI_Integer :
+	case aiPTI_Integer:
 	{
 		int n;
 		material.Get(matProperty.mKey.C_Str(), matProperty.mSemantic, matProperty.mIndex, n);
 		matData = std::format("{}", n);
 		break;
 	}
-	case aiPTI_Buffer :
+	case aiPTI_Buffer:
 	{
 		std::unreachable();
 		break;
@@ -459,7 +1083,7 @@ void AssimpImporter::ShowNode(const aiNode& node)
 		for (int i = 0; i < node.mNumChildren; ++i) {
 			ShowNode(*node.mChildren[i]);
 		}
-		
+
 		ImGui::Separator();
 
 		ImGui::TreePop();
@@ -487,7 +1111,7 @@ void AssimpImporter::PrintMesh(const aiMesh& mesh)
 			ImGui::Text("Bone Count : %u", mesh.mNumBones);
 			for (int j = 0; j < mesh.mNumBones; ++j) {
 				aiBone* bone = mesh.mBones[j];
-				if(ImGui::TreeNode(std::format("{}", bone->mName.C_Str()).c_str())) {
+				if (ImGui::TreeNode(std::format("{}", bone->mName.C_Str()).c_str())) {
 					PrintBone(*bone);
 
 					ImGui::TreePop();
@@ -706,7 +1330,7 @@ void AssimpImporter::PrintMaterial(const aiMaterial& material)
 						ImGui::Text("Embedded? : %s", std::format("{}", bisEmbedded).c_str());
 					}
 				}
-				
+
 				ImGui::TreePop();
 			}
 		}
@@ -728,7 +1352,7 @@ void AssimpImporter::PrintAnimation(const aiAnimation& animation)
 	if (ImGui::TreeNode(strTreeKey1.c_str())) {
 		for (int i = 0; i < animation.mNumChannels; ++i) {
 			std::string strTreeKey2 = std::format("Channel #{:<3} - {}", i, animation.mChannels[i]->mNodeName.C_Str());
-			if(ImGui::TreeNode(strTreeKey2.c_str())) {
+			if (ImGui::TreeNode(strTreeKey2.c_str())) {
 				aiNodeAnim* node = animation.mChannels[i];
 				PrintAnimationNode(*node);
 
@@ -924,532 +1548,6 @@ std::string AssimpImporter::FormatMetaData(const aiMetadata& metaData, size_t id
 	}
 }
 
-void AssimpImporter::BuildNodeList(aiNode* node, int counter)
-{
-	m_NodeNameIndexMap[node->mName.C_Str()] = counter;
-
-	for (UINT i = 0; i < node->mNumChildren; ++i)
-		BuildNodeList(node->mChildren[i], ++counter);
-}
-
-int AssimpImporter::FindNodeIndexByName(std::string_view svBoneName)
-{
-	std::string name{ svBoneName };
-	auto it = m_NodeNameIndexMap.find(name);
-	if (it != m_NodeNameIndexMap.end()) return it->second;
-	return -1;
-}
-
-void AssimpImporter::BuildSkinData(const aiMesh& mesh)
-{
-	for (UINT j = 0; j < mesh.mNumBones; ++j) {
-		aiBone* aiBonePtr = mesh.mBones[j];
-		std::string boneName(aiBonePtr->mName.C_Str());
-
-		// Bone Index 얻기
-		int boneIndex = 0;
-		if (m_BoneNameIndexMap.find(boneName) == m_BoneNameIndexMap.end()) {
-			boneIndex = (int)m_boneInfos.size();
-
-			BONE_IMPORT_INFO b;
-			b.strName = boneName;
-			b.nNodeIndex = FindNodeIndexByName(boneName);
-
-			XMMATRIX xmmtxOffset = XMLoadFloat4x4(&XMFLOAT4X4(&aiBonePtr->mOffsetMatrix.a1));
-			xmmtxOffset = XMMatrixTranspose(xmmtxOffset);
-			XMStoreFloat4x4(&b.xmf4x4Offset, xmmtxOffset);
-
-			m_boneInfos.push_back(b);
-			m_BoneNameIndexMap[boneName] = boneIndex;
-		}
-		else {
-			boneIndex = m_BoneNameIndexMap[boneName];
-		}
-
-		// 정점별 Weight 추가
-		for (UINT k = 0; k < aiBonePtr->mNumWeights; ++k) {
-			aiVertexWeight vw = aiBonePtr->mWeights[k];
-			UINT vId = vw.mVertexId;
-			float wVal = vw.mWeight;
-
-			m_VertexWeights[vId].emplace_back(boneIndex, wVal);
-		}
-	}
-}
-
-std::pair<std::array<int, 4>, std::array<float, 4>> AssimpImporter::LoadSkinData(size_t nVertexID)
-{
-	auto it = m_VertexWeights.find(nVertexID);
-	if (it == m_VertexWeights.end()) 
-		return { { -1, -1, -1, -1 }, {0.f, 0.f, 0.f, 0.f} };
-
-	auto& weights = it->second;
-
-	// 큰 weight 순으로 정렬
-	std::sort(weights.begin(), weights.end(),
-		[](auto& a, auto& b) { return a.second > b.second; });
-
-	std::array<int, 4> boneIndices{ 0,0,0,0 };
-	std::array<float, 4> boneWeights{ 0.f, 0.f, 0.f, 0.f };
-
-	int slot = 0;
-	for (auto& [boneIndex, weight] : weights) {
-		if (slot >= 4) break; // 최대 4개까지만
-		boneIndices[slot] = boneIndex;
-		boneWeights[slot] = weight;
-		slot++;
-	}
-
-	// normalize
-	float sum = 0.f;
-	for (int i = 0; i < 4; ++i) sum += boneWeights[i];
-	if (sum > 0.f) {
-		for (int i = 0; i < 4; ++i)
-			boneWeights[i] /= sum;
-	}
-
-	return { boneIndices, boneWeights };
-
-}
-
-MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
-{
-	MESH_IMPORT_INFO info;
-	BuildSkinData(mesh);
-
-	info.strMeshName = mesh.mName.C_Str();
-
-	uint32_t nVertices = mesh.mNumVertices;
-	info.xmf3Positions.reserve(nVertices);
-	info.xmf3Normals.reserve(nVertices);
-	info.xmf3Tangents.reserve(nVertices);
-	info.xmf3BiTangents.reserve(nVertices);
-
-	for (auto color : info.xmf4Colors) {
-		color.reserve(nVertices);
-	}
-
-	for (auto texCoord : info.xmf2TexCoords) {
-		texCoord.reserve(nVertices);
-	}
-
-
-	for (int i = 0; i < nVertices; ++i) {
-		info.xmf3Positions.push_back(XMFLOAT3(mesh.mVertices[i].x, mesh.mVertices[i].y, mesh.mVertices[i].z));
-		mesh.HasNormals() ? info.xmf3Normals.push_back(XMFLOAT3(mesh.mNormals[i].x, mesh.mNormals[i].y, mesh.mNormals[i].z)) : info.xmf3Normals.push_back(XMFLOAT3(0.f, 0.f, 0.f));
-		if (mesh.HasTangentsAndBitangents()) {
-			info.xmf3Tangents.push_back(XMFLOAT3(mesh.mTangents[i].x, mesh.mTangents[i].y, mesh.mTangents[i].z));
-			info.xmf3BiTangents.push_back(XMFLOAT3(mesh.mBitangents[i].x, mesh.mBitangents[i].y, mesh.mBitangents[i].z));
-		}
-		else {
-			info.xmf3Tangents.push_back(XMFLOAT3(0.f, 0.f, 0.f));
-			info.xmf3BiTangents.push_back(XMFLOAT3(0.f, 0.f, 0.f));
-		}
-
-		auto [indices, weights] = LoadSkinData(i);
-
-		info.blendIndices.push_back(indices);
-		info.blendWeights.push_back(weights);
-
-		for (int j = 0; j < mesh.GetNumColorChannels(); ++j) {
-			info.xmf4Colors[j].push_back(XMFLOAT4(mesh.mColors[j][i].r, mesh.mColors[j][i].g, mesh.mColors[j][i].b, mesh.mColors[j][i].a));
-		}
-
-		for (int j = 0; j < mesh.GetNumUVChannels(); ++j) {
-			assert(mesh.mNumUVComponents[j] == 2);
-			info.xmf2TexCoords[j].push_back(XMFLOAT2(mesh.mTextureCoords[j][i].x, mesh.mTextureCoords[j][i].y));
-		}
-
-	}
-
-	info.uiIndices.reserve(mesh.mNumFaces);
-	for (int i = 0; i < mesh.mNumFaces; ++i) {
-		for (int j = 0; j < mesh.mFaces[i].mNumIndices; ++j) {
-			info.uiIndices.push_back(mesh.mFaces[i].mIndices[j]);
-		}
-	}
-
-	return info;
-}
-
-MATERIAL_IMPORT_INFO AssimpImporter::LoadMaterialData(const aiMaterial& material)
-{
-	MATERIAL_IMPORT_INFO info{};
-
-	info.strMaterialName = material.GetName().C_Str();
-
-	aiColor4D aicValue{};
-	if (material.Get(AI_MATKEY_COLOR_DIFFUSE, aicValue) == AI_SUCCESS) {
-		info.xmf4AlbedoColor = XMFLOAT4(&aicValue.r);
-	}
-
-	if (material.Get(AI_MATKEY_COLOR_AMBIENT, aicValue) == AI_SUCCESS) {
-		info.xmf4AmbientColor = XMFLOAT4(&aicValue.r);
-	}
-
-	if (material.Get(AI_MATKEY_COLOR_SPECULAR, aicValue) == AI_SUCCESS) {
-		info.xmf4SpecularColor = XMFLOAT4(&aicValue.r);
-	}
-
-	if (material.Get(AI_MATKEY_COLOR_EMISSIVE, aicValue) == AI_SUCCESS) {
-		info.xmf4EmissiveColor = XMFLOAT4(&aicValue.r);
-	}
-
-	float fValue{};
-	if (material.Get(AI_MATKEY_SHININESS, fValue) == AI_SUCCESS) {
-		info.fGlossiness = fValue;
-	}
-
-	if (material.Get(AI_MATKEY_ROUGHNESS_FACTOR, fValue) == AI_SUCCESS) {
-		info.fSmoothness = 1 - fValue;
-	}
-
-	if (material.Get(AI_MATKEY_METALLIC_FACTOR, fValue) == AI_SUCCESS) {
-		info.fMetallic = fValue;
-	}
-
-	if (material.Get(AI_MATKEY_REFLECTIVITY, fValue) == AI_SUCCESS) {
-		info.fGlossyReflection = fValue;
-	}
-
-	// Texture?
-
-	std::vector<aiTextureType> textureTypes = {
-		aiTextureType_DIFFUSE,
-		aiTextureType_SPECULAR,
-		aiTextureType_METALNESS,
-		aiTextureType_NORMALS,
-		aiTextureType_EMISSIVE,
-	};
-
-	aiString aistrTexturePath{};
-	
-	if (material.GetTexture(aiTextureType_DIFFUSE, 0, &aistrTexturePath) == AI_SUCCESS) {
-		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
-		if (pEmbeddedTexture) {
-			info.strAlbedoMapName = ExportTexture(*pEmbeddedTexture);
-		}
-	}
-	
-	if (material.GetTexture(aiTextureType_SPECULAR, 0, &aistrTexturePath) == AI_SUCCESS) {
-		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
-		if (pEmbeddedTexture) {
-			info.strSpecularMapName = ExportTexture(*pEmbeddedTexture);
-		}
-	}
-	
-	if (material.GetTexture(aiTextureType_METALNESS, 0, &aistrTexturePath) == AI_SUCCESS) {
-		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
-		if (pEmbeddedTexture) {
-			info.strMetallicMapName = ExportTexture(*pEmbeddedTexture);
-		}
-	}
-	
-	if (material.GetTexture(aiTextureType_NORMALS, 0, &aistrTexturePath) == AI_SUCCESS) {
-		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
-		if (pEmbeddedTexture) {
-			info.strNormalMapName = ExportTexture(*pEmbeddedTexture);
-		}
-	}
-	
-	if (material.GetTexture(aiTextureType_EMISSIVE, 0, &aistrTexturePath) == AI_SUCCESS) {
-		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
-		if (pEmbeddedTexture) {
-			info.strEmissionMapName = ExportTexture(*pEmbeddedTexture);
-		}
-	}
-
-	if (material.GetTexture(aiTextureType_DIFFUSE, 1, &aistrTexturePath) == AI_SUCCESS) {
-		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
-		if (pEmbeddedTexture) {
-			info.strDetailAlbedoMapName = ExportTexture(*pEmbeddedTexture);
-		}
-	}
-
-	if (material.GetTexture(aiTextureType_NORMALS, 1, &aistrTexturePath) == AI_SUCCESS) {
-		const aiTexture* pEmbeddedTexture = m_rpScene->GetEmbeddedTexture(aistrTexturePath.C_Str());
-		if (pEmbeddedTexture) {
-			info.strDetailNormalMapName = ExportTexture(*pEmbeddedTexture);
-		}
-	}
-
-	return info;
-}
-
-BONE_IMPORT_INFO AssimpImporter::LoadBoneData(const aiBone& bone)
-{
-	BONE_IMPORT_INFO info;
-
-	info.strName = bone.mName.C_Str();
-
-	info.xmf4x4Offset = XMFLOAT4X4(&bone.mOffsetMatrix.a1);
-
-	return info;
-}
-
-ANIMATION_IMPORT_INFO AssimpImporter::LoadAnimationData(const aiAnimation& animation)
-{
-	/* 
-		- 애니메이션이 30프레임이라고 가정하고 각 Key 들을 샘플링
-	*/
-	ANIMATION_IMPORT_INFO info;
-	{
-		info.strAnimationName = animation.mName.C_Str();
-		info.fDuration = animation.mDuration;
-		info.fTicksPerSecond = animation.mTicksPerSecond;
-
-		float fDurationInSec = info.fDuration / info.fTicksPerSecond;
-		const UINT nFrameRate = 30;
-		UINT nFrameCount = std::ceil(fDurationInSec * nFrameRate);
-
-		for (int i = 0; i < animation.mNumChannels; ++i) {
-			aiNodeAnim* pChannel = animation.mChannels[i];
-
-			AnimChannel channel{};
-			channel.strName = pChannel->mNodeName.C_Str();
-			channel.keyframes.reserve(nFrameCount);
-
-			for (int j = 0; j < nFrameCount; ++j) {
-				float fTime = j / (float)nFrameRate;
-				float fTick = fTime * info.fTicksPerSecond;
-				AnimKeyframe keyframe{};
-
-				if (pChannel->mNumPositionKeys > 0) {
-					keyframe.xmf3PositionKey = InterpolateVectorKeyframe(fTick, pChannel->mPositionKeys, pChannel->mNumPositionKeys);
-				}
-
-				if (pChannel->mNumRotationKeys > 0) {
-					keyframe.xmf4RotationKey = InterpolateQuaternionKeyframe(fTick, pChannel->mRotationKeys, pChannel->mNumRotationKeys);
-				}
-
-				if (pChannel->mNumScalingKeys > 0) {
-					keyframe.xmf3ScaleKey = InterpolateVectorKeyframe(fTick, pChannel->mScalingKeys, pChannel->mNumScalingKeys);
-				}
-
-				keyframe.fTime = fTime;
-
-				channel.keyframes.push_back(keyframe);
-			}
-
-			info.animationDatas.push_back(channel);
-		}
-	}
-
-	return info;
-
-}
-
-DirectX::XMFLOAT3 AssimpImporter::InterpolateVectorKeyframe(float fTime, aiVectorKey* keys, UINT nKeys)
-{
-	if (nKeys == 1)
-		return XMFLOAT3(&keys[0].mValue.x);
-
-	// Find current index
-	int nIndex = 0;
-	while (nIndex + 1 < nKeys && fTime >= (float)keys[nIndex + 1].mTime) {
-		nIndex++;
-	}
-
-	int nNextIndex = nIndex + 1;
-	float fdelta = (float)(keys[nNextIndex].mTime - keys[nIndex].mTime);
-	float fFactor = (fTime - (float)keys[nIndex].mTime) / fdelta;
-
-	XMFLOAT3 xmf3Start = XMFLOAT3(&keys[nIndex].mValue.x);
-	XMFLOAT3 xmf3End = XMFLOAT3(&keys[nNextIndex].mValue.x);
-
-	XMVECTOR xmvStart = XMLoadFloat3(&xmf3Start);
-	XMVECTOR xmvEnd = XMLoadFloat3(&xmf3End);
-	
-	XMVECTOR xmvResult = XMVectorAdd(xmvStart, XMVectorScale(XMVectorSubtract(xmvEnd, xmvStart), fFactor));
-	
-	XMFLOAT3 xmf3Result;
-	XMStoreFloat3(&xmf3Result, xmvResult);
-	return xmf3Result;
-}
-
-DirectX::XMFLOAT4 AssimpImporter::InterpolateQuaternionKeyframe(float fTime, aiQuatKey* keys, UINT nKeys)
-{
-	if (nKeys == 1)
-		return XMFLOAT4(keys[0].mValue.x, keys[0].mValue.y, keys[0].mValue.z, keys[0].mValue.w);
-
-	// Find current index
-	int nIndex = 0;
-	while (nIndex + 1 < nKeys && fTime >= (float)keys[nIndex + 1].mTime) {
-		nIndex++;
-	}
-
-	int nNextIndex = nIndex + 1;
-	float fdelta = (float)(keys[nNextIndex].mTime - keys[nIndex].mTime);
-	float fFactor = (fTime - (float)keys[nIndex].mTime) / fdelta;
-
-	aiQuaternion aiqStart = keys[nIndex].mValue;
-	aiQuaternion aiqEnd = keys[nNextIndex].mValue;
-	aiQuaternion aiqResult;
-	aiQuaternion::Interpolate(aiqResult, aiqStart, aiqEnd, fFactor);
-	aiqResult.Normalize();
-
-	return XMFLOAT4(aiqResult.x, aiqResult.y, aiqResult.z, aiqResult.w);
-}
-
-std::string AssimpImporter::ExportTexture(const aiTexture& texture)
-{
-	fs::path curPath{ m_strPath };
-	std::string strTextureExportPath = std::format("{}/{} Textures", m_strCurrentPath, curPath.stem().string());
-
-	fs::path pathFromEmbeddedTexture{ texture.mFilename.C_Str() };
-	fs::path exportDirectoryPath{ strTextureExportPath };
-	fs::path savePath{ std::format("{}/{}", exportDirectoryPath.string(), pathFromEmbeddedTexture.filename().string()) };
-
-	if (fs::exists(savePath)) {
-		return savePath.string();
-	}
-
-	if (!fs::exists(exportDirectoryPath)) {
-		try {
-			fs::create_directories(exportDirectoryPath);
-		}
-		catch (const std::exception& e) {
-			SHOW_ERROR(e.what());
-		}
-	}
-
-	HRESULT hr;
-	if (curPath.extension().string() == ".dds") {
-		hr = ExportDDSFile(savePath.wstring(), texture);
-	}
-	else {
-		hr = ExportWICFile(savePath.wstring(), texture);
-	}
-
-	if (FAILED(hr)) {
-		__debugbreak();
-	}
-
-
-	return savePath.string();
-}
-
-HRESULT AssimpImporter::ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture)
-{
-	DirectX::ScratchImage scratchImg{};
-	DirectX::TexMetadata  metaData{};
-
-	// mHeight == 0 인 경우 압축된 데이터임
-	if (texture.mHeight == 0) {
-		HRESULT hr = ::LoadFromDDSMemory(
-			reinterpret_cast<const uint8_t*>(texture.pcData),
-			(size_t)texture.mWidth,
-			DDS_FLAGS_NONE,
-			&metaData,
-			scratchImg
-		);
-
-		if (FAILED(hr)) {
-			__debugbreak();
-			return S_FALSE;
-		}
-	}
-	else {
-		DirectX::Image img{};
-		img.width = texture.mWidth;
-		img.height = texture.mHeight;
-		img.format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		img.rowPitch = size_t(texture.mWidth) * 4;
-		img.slicePitch = img.rowPitch * texture.mHeight;
-		img.pixels = const_cast<uint8_t*>(
-			reinterpret_cast<const uint8_t*>(texture.pcData));
-
-		scratchImg.Initialize2D(img.format, img.width, img.height, 1, 1);
-		memcpy(scratchImg.GetPixels(), img.pixels, img.slicePitch);
-		metaData = scratchImg.GetMetadata();
-	}
-
-	GUID containerFormat;
-	GetContainerFormat(wsvSavePath, containerFormat);
-
-	return ::SaveToDDSFile(
-		scratchImg.GetImages(),
-		scratchImg.GetImageCount(),
-		scratchImg.GetMetadata(),
-		DirectX::DDS_FLAGS_NONE,
-		wsvSavePath.data()
-	);
-}
-
-HRESULT AssimpImporter::ExportWICFile(std::wstring_view wsvSavePath, const aiTexture& texture)
-{
-	DirectX::ScratchImage scratchImg{};
-
-	// mHeight == 0 인 경우 압축된 데이터임
-	if (texture.mHeight == 0) {
-		HRESULT hr = ::LoadFromWICMemory(
-			reinterpret_cast<const uint8_t*>(texture.pcData),
-			(size_t)texture.mWidth,
-			::WIC_FLAGS_NONE,
-			nullptr,
-			scratchImg,
-			nullptr
-		);
-
-		if (FAILED(hr)) {
-			__debugbreak();
-			return S_FALSE;
-		}
-	}
-	else {
-		DirectX::Image img = {};
-		img.width = texture.mWidth;
-		img.height = texture.mHeight;
-		img.format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		img.rowPitch = size_t(texture.mWidth * 4);
-		img.slicePitch = img.rowPitch * texture.mHeight;
-		img.pixels = reinterpret_cast<uint8_t*>(texture.pcData);
-
-		scratchImg.Initialize2D(img.format, img.width, img.height, 1, 1);
-		memcpy(scratchImg.GetPixels(), img.pixels, img.slicePitch);
-	}
-
-	GUID containerFormat;
-	GetContainerFormat(wsvSavePath, containerFormat);
-
-	return ::SaveToWICFile(
-		scratchImg.GetImages(),
-		scratchImg.GetImageCount(),
-		DirectX::WIC_FLAGS_NONE,
-		containerFormat,
-		wsvSavePath.data()
-	);
-
-}
-
-void AssimpImporter::GetContainerFormat(std::wstring_view wsvSaveName, GUID& formatGUID)
-{
-	fs::path savePath{ wsvSaveName };
-	std::string format = savePath.extension().string();
-
-	if (format == ".png") {
-		formatGUID = GUID_ContainerFormatPng;
-	}
-	else if (format == ".jpg" || format == ".jpeg") {
-		formatGUID = GUID_ContainerFormatJpeg;
-	}
-	else if (format == ".bmp") {
-		formatGUID = GUID_ContainerFormatBmp;
-	}
-	else if (format == ".tif" || format == ".tiff") {
-		formatGUID = GUID_ContainerFormatTiff;
-	}
-	else if (format == ".gif") {
-		formatGUID = GUID_ContainerFormatGif;
-	}
-	else if (format == ".wmp") {
-		formatGUID = GUID_ContainerFormatWmp;
-	}
-	else if (format == ".heif") {
-		formatGUID = GUID_ContainerFormatHeif;
-	}
-}
-
 void AssimpImporter::PrintTabs()
 {
 	std::string s;
@@ -1465,78 +1563,4 @@ void AssimpImporter::PrintTabs(int nTabs)
 }
 
 
-void AssimpImporter::CreateCommandList()
-{
-	HRESULT hr{};
-
-	// Create Command Queue
-	D3D12_COMMAND_QUEUE_DESC d3dCommandQueueDesc{};
-	::ZeroMemory(&d3dCommandQueueDesc, sizeof(D3D12_COMMAND_QUEUE_DESC));
-	{
-		d3dCommandQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-		d3dCommandQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-	}
-	hr = m_pd3dDevice->CreateCommandQueue(&d3dCommandQueueDesc, IID_PPV_ARGS(m_pd3dCommandQueue.GetAddressOf()));
-	if (FAILED(hr)) {
-		SHOW_ERROR("Failed to create CommandQueue");
-	}
-
-	// Create Command Allocator
-	hr = m_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pd3dCommandAllocator.GetAddressOf()));
-	if (FAILED(hr)) {
-		SHOW_ERROR("Failed to create CommandAllocator");
-	}
-
-	// Create Command List
-	hr = m_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pd3dCommandAllocator.Get(), NULL, IID_PPV_ARGS(m_pd3dCommandList.GetAddressOf()));
-	if (FAILED(hr)) {
-		SHOW_ERROR("Failed to create CommandList");
-	}
-
-	// Close Command List(default is opened)
-	hr = m_pd3dCommandList->Close();
-}
-
-void AssimpImporter::CreateFence()
-{
-	HRESULT hr{};
-
-	hr = m_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_pd3dFence.GetAddressOf()));
-	if (FAILED(hr)) {
-		SHOW_ERROR("Failed to create fence");
-	}
-
-	m_hFenceEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
-}
-
-void AssimpImporter::WaitForGPUComplete()
-{
-	UINT64 nFenceValue = ++m_nFenceValue;
-	HRESULT hResult = m_pd3dCommandQueue->Signal(m_pd3dFence.Get(), nFenceValue);
-	if (m_pd3dFence->GetCompletedValue() < nFenceValue)
-	{
-		hResult = m_pd3dFence->SetEventOnCompletion(nFenceValue, m_hFenceEvent);
-		::WaitForSingleObject(m_hFenceEvent, INFINITE);
-	}
-}
-
-void AssimpImporter::ExcuteCommandList()
-{
-	m_pd3dCommandList->Close();
-
-	ID3D12CommandList* ppCommandLists[] = { m_pd3dCommandList.Get() };
-	m_pd3dCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-	WaitForGPUComplete();
-}
-
-void AssimpImporter::ResetCommandList()
-{
-	HRESULT hr;
-	hr = m_pd3dCommandAllocator->Reset();
-	hr = m_pd3dCommandList->Reset(m_pd3dCommandAllocator.Get(), NULL);
-	if (FAILED(hr)) {
-		SHOW_ERROR("Faied to reset CommandList");
-		__debugbreak();
-	}
-}
+#pragma endregion 

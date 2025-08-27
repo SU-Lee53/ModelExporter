@@ -10,8 +10,8 @@ struct VS_INPUT
     float4  color           : COLOR;
     float2  TexCoord[8]     : TEXCOORD;
     
-    int     blendIndices[4] : BLEND_INDICES;
-    float   blendWeight[4]  : BLEND_WEIGHTS;
+    int4     blendIndices : BLEND_INDICES;
+    float4   blendWeight  : BLEND_WEIGHTS;
     
 };
 

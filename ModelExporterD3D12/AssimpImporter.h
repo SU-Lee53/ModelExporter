@@ -11,8 +11,6 @@ public:
 
 	void LoadFBXFilesFromPath(std::string_view svPath);
 	bool LoadModel(std::string_view svPath);
-	std::shared_ptr<OBJECT_IMPORT_INFO>
-		LoadObject(const aiNode& node, std::shared_ptr<OBJECT_IMPORT_INFO> m_pParent);
 
 	void Run();
 	void RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
@@ -51,18 +49,20 @@ private:
 	void ResetCommandList();
 
 private:
-	MESH_IMPORT_INFO LoadMeshData(const aiMesh& node);
+	void CollectSkeletonFromScene(const aiScene* scene);
+	void FillGlobalBoneMapToObjectStatic(); // OBJECT_IMPORT_INFO::boneMap 채우기
+
+	std::shared_ptr<OBJECT_IMPORT_INFO> BuildObjectHierarchy(const aiNode* node, const aiScene* scene, std::shared_ptr<OBJECT_IMPORT_INFO> parent);
+	MESH_IMPORT_INFO LoadMeshData(const aiMesh& mesh); // 정점/인덱스 + 스키닝 데이터 생성
+
 	MATERIAL_IMPORT_INFO LoadMaterialData(const aiMaterial& node);
 	BONE_IMPORT_INFO LoadBoneData(const aiBone& bone);
-	ANIMATION_IMPORT_INFO LoadAnimationData(const aiAnimation& animation);
+	std::vector<ANIMATION_IMPORT_INFO> LoadAnimationData(const aiScene* scene, float fTargetFPS);
 
 	XMFLOAT3 InterpolateVectorKeyframe(float fTime, aiVectorKey* keys, UINT nKeys);
 	XMFLOAT4 InterpolateQuaternionKeyframe(float fTime, aiQuatKey* keys, UINT nKeys);
 
-	int FindNodeIndexByName(std::string_view svBoneName);
-	void BuildNodeList(aiNode* node, int counter);
-	void BuildSkinData(const aiMesh& mesh);
-	std::pair<std::array<int,4>, std::array<float,4>> LoadSkinData(size_t nVertexID);
+	int FindNodeIndexByName(const aiNode* root, std::string_view svBoneName);
 
 	std::string ExportTexture(const aiTexture& texture);
 	HRESULT ExportDDSFile(std::wstring_view wsvSavePath, const aiTexture& texture);
@@ -80,10 +80,22 @@ private:
 	aiNode* m_rpRootNode = nullptr;
 	UINT m_nNodes = 0;
 
-	std::vector<BONE_IMPORT_INFO> m_boneInfos;
-	std::map<std::string, int> m_NodeNameIndexMap; 
-	std::map<std::string, int> m_BoneNameIndexMap; 
-	std::map<UINT, std::vector<std::pair<UINT, float>>> m_VertexWeights;
+private:
+	// Scene 전역 스켈레톤
+	struct BoneInfoInternal {
+		std::string name;
+		int nodeIndex = -1;
+		XMFLOAT4X4 offsetRow; // row-major (ai offset을 ToRowMajor로 변환해 저장)
+	};
+	std::vector<BoneInfoInternal> m_bones;                // boneIndex -> BoneInfoInternal
+	std::unordered_map<std::string, int> m_boneNameToIndex;// 이름 -> boneIndex
+
+	// Scene 전역 정점 가중치(정점ID는 각 Mesh의 Local index)
+	// Mesh별로 ImportMesh() 안에서 자기 정점ID로 접근합니다.
+	// (Assimp은 mesh별로 bone.weights 의 vertexId가 mesh-local 인덱스입니다)
+	struct VtxWeight { int bone; float w; };
+	// mesh 포인터 주소값을 key로 사용
+	std::unordered_map<const aiMesh*, std::unordered_map<unsigned, std::vector<VtxWeight>>> m_meshVertexWeights;
 
 private:
 	std::string m_strCurrentPath;

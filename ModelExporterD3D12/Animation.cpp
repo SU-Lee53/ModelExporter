@@ -54,15 +54,24 @@ void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> pd3dRend
 	std::vector<XMFLOAT4X4> xmf4x4FinalMatrices;
 	xmf4x4FinalMatrices.reserve(m_bones.size());
 
+	ImGui::Begin("Offset");
+
 	for (const auto& bone : m_bones) {
 		XMMATRIX xmmtxGlobal = global[bone.GetName()];
 		XMMATRIX xmmtxOffset = XMLoadFloat4x4(&bone.m_xmf4x4Offset);
 		XMMATRIX xmmtxFinal = XMMatrixTranspose(XMMatrixMultiply(xmmtxGlobal, xmmtxOffset));
+		//XMMATRIX xmmtxFinal = XMMatrixTranspose(xmmtxGlobal);
 		
+		XMFLOAT4X4 xmf4x4Offset;
+		XMStoreFloat4x4(&xmf4x4Offset, xmmtxOffset);
+		ImGui::Text("Offset %s : \n%s", bone.GetName().c_str(), ::FormatMatrix(xmf4x4Offset).c_str());
+
 		XMFLOAT4X4 xmf4x4Final;
 		XMStoreFloat4x4(&xmf4x4Final, xmmtxFinal);
 		xmf4x4FinalMatrices.push_back(xmf4x4Final);
 	}
+
+	ImGui::End();
 
 	::memcpy(m_pBoneTransformMappedPtr, xmf4x4FinalMatrices.data(), sizeof(XMFLOAT4X4) * m_bones.size());
 

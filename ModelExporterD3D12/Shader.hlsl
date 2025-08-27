@@ -1,6 +1,6 @@
 #include "ShaderResources.hlsl"
 
-float4 SkinningPosition(float3 pos, int indices[4], float weights[4])
+float4 SkinningPosition(float3 pos, int4 indices, float4 weights)
 {
     float4 skinned = float4(0, 0, 0, 0);
     [unroll]
@@ -16,7 +16,7 @@ float4 SkinningPosition(float3 pos, int indices[4], float weights[4])
     return skinned;
 }
 
-float3 SkinningNormal(float3 normal, int indices[4], float weights[4])
+float3 SkinningNormal(float3 normal, int4 indices, float4 weights)
 {
     float3 skinned = float3(0, 0, 0);
     [unroll]
