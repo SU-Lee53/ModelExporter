@@ -1,176 +1,308 @@
-#include "stdafx.h"
+Ôªø#include "stdafx.h"
 #include "Animation.h"
 
+ComPtr<ID3D12Resource>  Animation::s_pIdentityBonesCB = nullptr;
+UINT8*                  Animation::s_pIdentityBonesMapped = nullptr;
+bool                    Animation::s_identityReady = false;
 
 
-void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
-{
-	if (m_bPlay) {
-		m_fTimeElapsed += DELTA_TIME;
-	}
+static DirectX::XMMATRIX MakeAffine(const AnimKeyframe& k) {
+    XMVECTOR S = XMLoadFloat3(&k.xmf3ScaleKey);
+    XMVECTOR R = XMLoadFloat4(&k.xmf4RotationKey);
+    XMVECTOR T = XMLoadFloat3(&k.xmf3PositionKey);
 
-	auto curAnimation = m_AnimationDatas[m_nCurrentAnimationIndex];
-	float durationInSec = curAnimation.fDuration / curAnimation.fTicksPerSecond;
-	if (m_fTimeElapsed > durationInSec) {
-		m_fTimeElapsed = fmod(m_fTimeElapsed, durationInSec);
-	}
+    // Ïä§ÏºÄÏùº 0 Î∞©ÏßÄ
+    if (fabsf(XMVectorGetX(S)) < 1e-6f &&
+        fabsf(XMVectorGetY(S)) < 1e-6f &&
+        fabsf(XMVectorGetZ(S)) < 1e-6f)
+        S = XMVectorSet(1, 1, 1, 0);
 
-	// «ˆ¿Á «¡∑π¿”¿« Index
-	int nFrameIndex = (int)((m_fTimeElapsed * curAnimation.nFrameCount) / durationInSec);
-	if (nFrameIndex >= curAnimation.nFrameCount) {
-		nFrameIndex = curAnimation.nFrameCount - 1;
-	}
+    // ÏøºÌÑ∞ÎãàÏñ∏ Ï†ïÍ∑úÌôî + 0 Î∞©ÏßÄ
+    if (XMVector4Equal(R, XMVectorZero())) R = XMQuaternionIdentity();
+    else R = XMQuaternionNormalize(R);
 
-	// Channel ∫∞ Local
-	std::unordered_map<std::string, XMMATRIX> local;
-	for (auto& channel : curAnimation.channels)
-	{
-		const AnimKeyframe& k = channel.keyframes[nFrameIndex];
-		XMVECTOR xmvScale = XMLoadFloat3(&k.xmf3ScaleKey);
-		XMVECTOR xmvRotation = XMLoadFloat4(&k.xmf4RotationKey);
-		XMVECTOR xmvTranslate = XMLoadFloat3(&k.xmf3PositionKey);
-	
-		local[channel.strName] = XMMatrixAffineTransformation(xmvScale, XMVectorZero(), xmvRotation, xmvTranslate);
-	}
-
-	// ∫Œ∏ ¥©¿˚
-	auto pRoot = m_wpOwner.lock();
-	std::unordered_map<std::string, XMMATRIX> global;
-
-	std::function<void(std::shared_ptr<GameObject>, XMMATRIX)> ComputeGlobal = [&](std::shared_ptr<GameObject> pCur, XMMATRIX xmmtxParentGlobal) {
-		XMMATRIX xmmtxLocal = local.contains(pCur->GetName()) ? local[pCur->GetName()] : XMLoadFloat4x4(&pCur->GetLocalTransform());
-		XMMATRIX xmmtxGlobal = XMMatrixMultiply(xmmtxParentGlobal, xmmtxLocal);
-		global[pCur->GetName()] = xmmtxGlobal;
-
-		for (auto& pChild : pCur->GetChildren()) {
-			ComputeGlobal(pChild, xmmtxGlobal);
-		}
-	};
-
-	ComputeGlobal(pRoot, XMMatrixIdentity());
-
-	// ConstantBuffer (Bone Transform) ø°¥Ÿ∞° «‡∑ƒµÈ ¡§∏Æ
-	
-	std::vector<XMFLOAT4X4> xmf4x4FinalMatrices;
-	xmf4x4FinalMatrices.reserve(m_bones.size());
-
-	ImGui::Begin("Offset");
-
-	for (const auto& bone : m_bones) {
-		XMMATRIX xmmtxGlobal = global[bone.GetName()];
-		XMMATRIX xmmtxOffset = XMLoadFloat4x4(&bone.m_xmf4x4Offset);
-		XMMATRIX xmmtxFinal = XMMatrixTranspose(XMMatrixMultiply(xmmtxGlobal, xmmtxOffset));
-		//XMMATRIX xmmtxFinal = XMMatrixTranspose(xmmtxGlobal);
-		
-		XMFLOAT4X4 xmf4x4Offset;
-		XMStoreFloat4x4(&xmf4x4Offset, xmmtxOffset);
-		ImGui::Text("Offset %s : \n%s", bone.GetName().c_str(), ::FormatMatrix(xmf4x4Offset).c_str());
-
-		XMFLOAT4X4 xmf4x4Final;
-		XMStoreFloat4x4(&xmf4x4Final, xmmtxFinal);
-		xmf4x4FinalMatrices.push_back(xmf4x4Final);
-	}
-
-	ImGui::End();
-
-	::memcpy(m_pBoneTransformMappedPtr, xmf4x4FinalMatrices.data(), sizeof(XMFLOAT4X4) * m_bones.size());
-
-	// Control Data
-	CB_ANIMATION_CONTROL_DATA controlData{};
-	controlData.nCurrentAnimationIndex = m_nCurrentAnimationIndex;
-	controlData.fDuration = m_AnimationDatas[m_nCurrentAnimationIndex].fDuration;
-	controlData.fTicksPerSecond = m_AnimationDatas[m_nCurrentAnimationIndex].fTicksPerSecond;
-	controlData.fTimeElapsed = m_fTimeElapsed;
-
-	::memcpy(m_pControllerDataMappedPtr, &controlData, sizeof(CB_ANIMATION_CONTROL_DATA));
-
-	pd3dRenderCommandList->SetGraphicsRootConstantBufferView(4, m_pControllerCBuffer->GetGPUVirtualAddress());
-	pd3dRenderCommandList->SetGraphicsRootConstantBufferView(5, m_pBoneTransformCBuffer->GetGPUVirtualAddress());
-
-	ImGui::Begin("Animation");
-	{
-		ImGui::Text("m_fTimeElapsed : %f", m_fTimeElapsed);
-		m_bPlay = ImGui::Button("Play") ? !m_bPlay : m_bPlay;
-
-		if (ImGui::TreeNode("Global")) {
-			for (auto [strName, xmmtxGlobal] : global) {
-				XMFLOAT4X4 xmf4x4Global;
-				XMStoreFloat4x4(&xmf4x4Global, xmmtxGlobal);
-				ImGui::Text("%s : ", strName.c_str());
-				ImGui::Text("Mat : \n%s", ::FormatMatrix(xmf4x4Global).c_str());
-				ImGui::Separator();
-			}
-
-			ImGui::TreePop();
-		}
-
-		if (ImGui::TreeNode("Final")) {
-			for (int i = 0; i < m_bones.size(); ++i) {
-				ImGui::Text("%s : ", m_bones[i].m_strName.c_str());
-				ImGui::Text("Mat : \n%s", ::FormatMatrix(xmf4x4FinalMatrices[i]).c_str());
-				ImGui::Separator();
-			}
-
-			ImGui::TreePop();
-		}
-
-	}
-	ImGui::End();
+    return XMMatrixAffineTransformation(S, XMVectorZero(), R, T); // S * R * T (row-major)
 }
 
-std::shared_ptr<Animation> Animation::LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const std::vector<ANIMATION_IMPORT_INFO>& infos, std::shared_ptr<GameObject> pOwner)
+std::shared_ptr<Animation>
+Animation::LoadFromInfo(ComPtr<ID3D12Device> device,
+    ComPtr<ID3D12GraphicsCommandList> /*cmd*/,
+    const std::vector<ANIMATION_IMPORT_INFO>& infos,
+    std::shared_ptr<GameObject> pRoot)
 {
-	// GPUø° ∫∏≥æ µ•¿Ã≈Õ
-	//	1. CB_ANIMATION_CONTROL_DATA -> æ÷¥œ∏ﬁ¿Ãº«¿« ±‚∫ª¿˚¿Œ ¡§∫∏µÈ¿Ã ∫∏∞¸µ 
-	//	2. SB_ANIMATION_TRANSFORM_DATA -> ∞¢ Bone µÈ¿Ã æ÷¥œ∏≈¿Ãº«¿ª ¿ß«ÿ √÷¡æ¿˚¿∏∑Œ ∫Ø»Øµ«æÓæﬂ «“ «‡∑ƒµÈ¿Ã ∫∏∞¸µ 
+    auto p = std::shared_ptr<Animation>(new Animation());
+    p->m_wpOwner = pRoot;
 
-	std::shared_ptr<Animation> pAnimation = std::make_shared<Animation>();
+    // 1) ÌÅ¥Î¶Ω Î≥µÏÇ¨
+    p->m_Clips.reserve(infos.size());
+    for (auto& in : infos) {
+        Clip c{};
+        c.name = in.strAnimationName;
+        c.durationTicks = in.fDuration;
+        c.ticksPerSecond = (in.fTicksPerSecond != 0.f) ? in.fTicksPerSecond : 25.f;
+        c.frameRate = (in.fFrameRate != 0.f) ? in.fFrameRate : 30.f;
 
-	for (const auto& info : infos) {
-		Data data;
-		data.fDuration = info.fDuration;
-		data.fTicksPerSecond = info.fTicksPerSecond;
-		data.channels = info.animationDatas;
-		data.nFrameCount = info.animationDatas[0].keyframes.size();
-		
-		pAnimation->m_AnimationDatas.push_back(data);
-	}
+        float durationSec = (c.ticksPerSecond != 0.f) ? c.durationTicks / c.ticksPerSecond : 0.f;
+        c.frameCount = std::max(1u, (unsigned)std::ceil(durationSec * c.frameRate));
 
-	// Controller data Constant Buffer ª˝º∫
-	pd3dDevice->CreateCommittedResource(
-		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-		D3D12_HEAP_FLAG_NONE,
-		&CD3DX12_RESOURCE_DESC::Buffer(::AlignConstantBuffersize(sizeof(CB_ANIMATION_CONTROL_DATA))),
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(pAnimation->m_pControllerCBuffer.GetAddressOf())
-	);
+        for (auto& ch : in.animationDatas) {
+            c.channels[ch.strName] = ch.keyframes; // [0..frameCount-1]
+        }
+        p->m_Clips.push_back(std::move(c));
+    }
 
-	pAnimation->m_pControllerCBuffer->Map(0, NULL, reinterpret_cast<void**>(&pAnimation->m_pControllerDataMappedPtr));
+    // 2) Î≥∏ ÏàúÏÑú (Í≥ÑÏ∏µ DFS ‚Üí boneMapÏóê Ï°¥Ïû¨ÌïòÎäî ÎÖ∏ÎìúÎßå)
+    p->buildBoneOrderFromImporterOrder();
 
-	// Transform data Constant Buffer ª˝º∫
-	pd3dDevice->CreateCommittedResource(
-		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-		D3D12_HEAP_FLAG_NONE,
-		&CD3DX12_RESOURCE_DESC::Buffer(::AlignConstantBuffersize(sizeof(CB_ANIMATION_TRANSFORM_DATA))),
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(pAnimation->m_pBoneTransformCBuffer.GetAddressOf())
-	);
+    // 3) CB Ìï†Îãπ
+    p->allocateCBuffers(device);
 
-	pAnimation->m_pBoneTransformCBuffer->Map(0, NULL, reinterpret_cast<void**>(&pAnimation->m_pBoneTransformMappedPtr));
+    // 4) Ï¥àÍ∏∞ ÌÅ¥Î¶Ω 0
+    p->SetClip(0);
 
-	pAnimation->m_bones.reserve(OBJECT_IMPORT_INFO::boneList.size());
+    return p;
+}
 
-	for (auto boneInfo : OBJECT_IMPORT_INFO::boneList) {
-		Bone b;
-		b.m_strName = boneInfo.strName;
-		b.nNodeIndex = boneInfo.nNodeIndex;
-		b.m_xmf4x4Offset = boneInfo.xmf4x4Offset;
-		pAnimation->m_bones.push_back(b);
-	}
+void Animation::SetClip(int idx)
+{
+    if (idx < 0 || idx >= (int)m_Clips.size()) return;
+    m_nCurrentAnimationIndex = idx;
+    m_fTimeElapsed = 0.f;
+}
 
-	pAnimation->m_wpOwner = pOwner;
+void Animation::buildBoneOrderFromImporterOrder()
+{
+    m_bones.clear();
+    m_bones.reserve(OBJECT_IMPORT_INFO::boneList.size());
+    for (const auto& b : OBJECT_IMPORT_INFO::boneList) {
+        BoneRef br{};
+        br.name = b.strName;
+        br.offsetRow = b.xmf4x4Offset; // row-major
+        m_bones.push_back(br);         // <-- Ïù∏Îç±Ïä§ 0..N-1 == Importer Ïù∏Îç±Ïä§
+    }
+}
 
-	return pAnimation;
+void Animation::allocateCBuffers(ComPtr<ID3D12Device> device)
+{
+    // Controller
+    {
+        CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
+        CD3DX12_RESOURCE_DESC buf = CD3DX12_RESOURCE_DESC::Buffer(AlignConstantBuffersize(sizeof(CB_ANIMATION_CONTROL_DATA)));
+        device->CreateCommittedResource(
+            &heap, D3D12_HEAP_FLAG_NONE, &buf,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(m_pControllerCBuffer.GetAddressOf()));
+        m_pControllerCBuffer->Map(0, nullptr, reinterpret_cast<void**>(&m_pControllerDataMappedPtr));
+    }
+
+    // Bone transforms
+    {
+        CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
+        CD3DX12_RESOURCE_DESC buf = CD3DX12_RESOURCE_DESC::Buffer(AlignConstantBuffersize(sizeof(CB_ANIMATION_TRANSFORM_DATA)));
+        device->CreateCommittedResource(
+            &heap, D3D12_HEAP_FLAG_NONE, &buf,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(m_pBoneTransformCBuffer.GetAddressOf()));
+        m_pBoneTransformCBuffer->Map(0, nullptr, reinterpret_cast<void**>(&m_pBoneTransformMappedPtr));
+    }
+}
+
+void Animation::buildLocalMapForFrame(std::unordered_map<std::string, XMMATRIX>& outLocal)
+{
+    outLocal.clear();
+    if (m_Clips.empty()) return;
+    Clip& clip = m_Clips[m_nCurrentAnimationIndex];
+
+    float durationSec = clip.durationTicks / clip.ticksPerSecond;
+    if (m_fTimeElapsed > durationSec) {
+        m_fTimeElapsed = fmodf(m_fTimeElapsed, durationSec);
+    }
+    //unsigned frameIndex = (unsigned)std::min<float>(std::max(0.f, (float)clip.frameCount - 1.f), floorf(m_fTimeElapsed * clip.frameRate));
+
+    for (auto& [name, frames] : clip.channels) {
+        XMFLOAT4X4 xmf4x4SRT = clip.GetSRT(name, m_fTimeElapsed);
+        outLocal[name] = XMLoadFloat4x4(&xmf4x4SRT); // SRT
+    }
+}
+
+void Animation::buildGlobalByDFS(std::shared_ptr<GameObject> node,
+    const std::unordered_map<std::string, XMMATRIX>& locals,
+    std::unordered_map<std::string, XMMATRIX>& outGlobal,
+    XMMATRIX parentGlobal)
+{
+    const std::string& name = node->GetName();
+
+    XMMATRIX L = XMMatrixIdentity();
+    auto it = locals.find(name);
+    if (it != locals.end()) {
+        L = it->second; // Ïï†Îãà Ï†ÅÏö© Î°úÏª¨
+    }
+    else {
+        // Ï±ÑÎÑê ÏóÜÏúºÎ©¥ bind pose Î°úÏª¨ (aiNode::mTransformation row-major)
+        L = XMLoadFloat4x4(&node->GetLocalTransform());
+    }
+
+    XMMATRIX G = XMMatrixMultiply(L, parentGlobal); // local * parent
+    outGlobal[name] = G;
+
+    for (auto& ch : node->GetChildren())
+        buildGlobalByDFS(ch, locals, outGlobal, G);
+}
+
+void Animation::BuildGlobalForDebug(std::unordered_map<std::string, DirectX::XMMATRIX>& outGlobal) const
+{
+    outGlobal.clear();
+    if (m_Clips.empty()) return;
+
+    // 1) Ï±ÑÎÑê Î≥¥Í∞ÑÏúºÎ°ú Î°úÏª¨ SRT(t)
+    std::unordered_map<std::string, XMMATRIX> local;
+    const_cast<Animation*>(this)->buildLocalMapForFrame(local); // ÎÇ¥Î∂Ä Ìó¨Ìçº Ïû¨ÏÇ¨Ïö©
+
+    // 2) Í∏ÄÎ°úÎ≤å ÎàÑÏ†Å: Global = Local * Parent, Î£®Ìä∏ ÏãúÏûë = Identity
+    auto owner = m_wpOwner.lock();
+    const_cast<Animation*>(this)->buildGlobalByDFS(owner, local, outGlobal, XMMatrixIdentity());
+}
+
+void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> cmd)
+{
+    if (m_Clips.empty()) return;
+
+    if (m_bPlay) m_fTimeElapsed += DELTA_TIME;
+
+    Clip& clip = m_Clips[m_nCurrentAnimationIndex];
+    float fDurationSec = clip.durationTicks / clip.ticksPerSecond;
+    m_fTimeElapsed = m_fTimeElapsed > fDurationSec ? fmodf(m_fTimeElapsed, fDurationSec) : m_fTimeElapsed;
+
+    // 1) Ï±ÑÎÑêÎ≥Ñ Î°úÏª¨
+    std::unordered_map<std::string, XMMATRIX> local;
+    buildLocalMapForFrame(local);
+
+    //local.clear();
+
+    // 2) Í∏ÄÎ°úÎ≤å (Í≥ÑÏ∏µ ÎàÑÏ†Å)
+    std::unordered_map<std::string, XMMATRIX> global;
+    auto pRoot = m_wpOwner.lock();
+    XMMATRIX xmvInverse = XMMatrixInverse(nullptr, XMLoadFloat4x4(&pRoot->GetLocalTransform()));
+    buildGlobalByDFS(pRoot, local, global, xmvInverse);
+    //buildGlobalByDFS(owner, local, global, XMMatrixIdentity());
+
+    // 3) Î≥∏Î≥Ñ ÏµúÏ¢Ö (global * offset) ‚Üí ÏóÖÎ°úÎìú ÏßÅÏ†Ñ transpose
+    auto* pOut = reinterpret_cast<CB_ANIMATION_TRANSFORM_DATA*>(m_pBoneTransformMappedPtr);
+    UINT boneCount = (UINT)std::min<size_t>(MAX_BONE_COUNT, m_bones.size());
+
+    for (UINT i = 0; i < boneCount; ++i) {
+        const auto& br = m_bones[i];
+        XMMATRIX G = XMMatrixIdentity();
+        auto it = global.find(br.name);
+        if (it != global.end()) G = it->second;
+
+        XMMATRIX O = XMLoadFloat4x4(&br.offsetRow); // row-major
+        XMMATRIX F = XMMatrixMultiply(G, O);        // final = global * offset
+        F = XMMatrixTranspose(F);                   // GPU column-major Í∏∞ÎåÄ
+        XMStoreFloat4x4(&pOut->xmf4x4Transforms[i], F);
+    }
+    // ÎÇ®Îäî Ïä¨Î°ØÏùÄ ÏïÑÏù¥Îç¥Ìã∞Ìã∞Î°ú
+    for (UINT i = boneCount; i < MAX_BONE_COUNT; ++i) {
+        XMStoreFloat4x4(&pOut->xmf4x4Transforms[i], XMMatrixTranspose(XMMatrixIdentity()));
+    }
+
+    // 4) Ïª®Ìä∏Î°§ CB
+    auto* pCtrl = reinterpret_cast<CB_ANIMATION_CONTROL_DATA*>(m_pControllerDataMappedPtr);
+    pCtrl->nCurrentAnimationIndex = m_nCurrentAnimationIndex;
+    pCtrl->fDuration = clip.durationTicks;
+    pCtrl->fTicksPerSecond = clip.ticksPerSecond;
+    pCtrl->fTimeElapsed = m_fTimeElapsed;
+
+    // 5) Î£®Ìä∏ÏãúÍ∑∏Ïóê Î∞îÏù∏Îî© (root param indexÎäî ÌîÑÎ°úÏ†ùÌä∏ Í≥†Ï†ïÍ∞í ÏÇ¨Ïö©)
+    // Ïòà: b4 = controller, b5 = bones
+    cmd->SetGraphicsRootConstantBufferView(4, m_pControllerCBuffer->GetGPUVirtualAddress());
+    cmd->SetGraphicsRootConstantBufferView(5, m_pBoneTransformCBuffer->GetGPUVirtualAddress());
+
+    ImGui::Begin("Anim");
+    {
+        ImGui::Text("m_fTimeElapsed : %f", m_fTimeElapsed);
+
+        m_bPlay = ImGui::Button("Play") ? !m_bPlay : m_bPlay;
+        
+        if (!m_bPlay) {
+            ImGui::SliderFloat("fTimeElapsed", &m_fTimeElapsed, 0.f, fDurationSec);
+        }
+
+
+        if (ImGui::TreeNode("Local")) {
+            for (auto& [name, xmmtxTransform] : local) {
+                ImGui::Text("Bone Name : %s", name.c_str());
+                XMFLOAT4X4 xmf4x4SRT; XMStoreFloat4x4(&xmf4x4SRT, xmmtxTransform);
+                ImGui::Text("Matrix : \n%s", ::FormatMatrix(xmf4x4SRT).c_str());
+                ImGui::Separator();
+            }
+
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("global")) {
+            for (auto& [name, xmmtxTransform] : global) {
+                ImGui::Text("Bone Name : %s", name.c_str());
+                XMFLOAT4X4 xmf4x4SRT; XMStoreFloat4x4(&xmf4x4SRT, xmmtxTransform);
+                ImGui::Text("Matrix : \n%s", ::FormatMatrix(xmf4x4SRT).c_str());
+                ImGui::Separator();
+            }
+
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Final")) {
+            for (int i = 0; i < boneCount; ++i) {
+                ImGui::Text("Bone Index : %d", i);
+                ImGui::Text("Bone Name : %s", m_bones[i].name.c_str());
+                ImGui::Text("Matrix : \n%s", ::FormatMatrix(pOut->xmf4x4Transforms[i]).c_str());
+                ImGui::Separator();
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Offset")) {
+            for (int i = 0; i < boneCount; ++i) {
+                ImGui::Text("Bone Index : %d", i);
+                ImGui::Text("Bone Name : %s", m_bones[i].name.c_str());
+                ImGui::Text("Matrix : \n%s", ::FormatMatrix(m_bones[i].offsetRow).c_str());
+                ImGui::Separator();
+            }
+            ImGui::TreePop();
+        }
+
+
+    }
+    ImGui::End();
+}
+
+void Animation::BindCBVs(ComPtr<ID3D12GraphicsCommandList> cmd,
+    UINT rootParamForCtrl, UINT rootParamForBones)
+{
+    if (m_pControllerCBuffer)
+        cmd->SetGraphicsRootConstantBufferView(rootParamForCtrl, m_pControllerCBuffer->GetGPUVirtualAddress());
+    if (m_pBoneTransformCBuffer)
+        cmd->SetGraphicsRootConstantBufferView(rootParamForBones, m_pBoneTransformCBuffer->GetGPUVirtualAddress());
+}
+
+// Ïï†ÎãàÎ©îÏù¥ÏÖòÏù¥ ÏóÜÏùÑ ÎïåÎèÑ VS(b5)Î•º ÎßåÏ°±ÏãúÌÇ§Í∏∞ ÏúÑÌïú ÏïÑÏù¥Îç¥Ìã∞Ìã∞ Î≥∏ Î∞∞Ïó¥ CB
+void Animation::BindIdentityBones(ComPtr<ID3D12Device> device,
+    ComPtr<ID3D12GraphicsCommandList> cmd,
+    UINT rootParamIndexForBones)
+{
+    if (!s_identityReady) {
+        // 1Ìöå ÏÉùÏÑ±
+        CD3DX12_HEAP_PROPERTIES heap(D3D12_HEAP_TYPE_UPLOAD);
+        CD3DX12_RESOURCE_DESC buf = CD3DX12_RESOURCE_DESC::Buffer(AlignConstantBuffersize(sizeof(CB_ANIMATION_TRANSFORM_DATA)));
+        device->CreateCommittedResource(
+            &heap, D3D12_HEAP_FLAG_NONE, &buf,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(s_pIdentityBonesCB.GetAddressOf()));
+        s_pIdentityBonesCB->Map(0, nullptr, reinterpret_cast<void**>(&s_pIdentityBonesMapped));
+
+        auto* pOut = reinterpret_cast<CB_ANIMATION_TRANSFORM_DATA*>(s_pIdentityBonesMapped);
+        XMMATRIX I = XMMatrixTranspose(XMMatrixIdentity());
+        for (UINT i = 0; i < MAX_BONE_COUNT; ++i) {
+            XMStoreFloat4x4(&pOut->xmf4x4Transforms[i], I);
+        }
+        s_identityReady = true;
+    }
+    cmd->SetGraphicsRootConstantBufferView(rootParamIndexForBones, s_pIdentityBonesCB->GetGPUVirtualAddress());
 }

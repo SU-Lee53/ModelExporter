@@ -55,7 +55,7 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	//auto it = std::ranges::find(pInfo->boneInfos, pObj->m_strName, &BONE_IMPORT_INFO::strName);
 	auto it = OBJECT_IMPORT_INFO::boneMap.find(pObj->m_strName);
 	if (it != OBJECT_IMPORT_INFO::boneMap.end()) {
-		pObj->m_pBone = Bone::LoadFromInfo(it->second);
+		pObj->m_pBone = Bone::LoadFromInfo(it->second); 
 	}
 
 
@@ -102,16 +102,31 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	}
 
 	// TODO : ANIMATION (only when Root)
-	// Bone 정보들이 생성되어야 하기 때문에 재귀가 끝나고 Root 에 도달하였을때 호출
 	if (!pInfo->pParent) {
-		if (pInfo->animationInfos.size() != 0) {
+		if (!pInfo->animationInfos.empty()) {
 			pObj->m_pAnimation = Animation::LoadFromInfo(pd3dDevice, pd3dCommandList, pInfo->animationInfos, pObj);
+		}
+		else {
+			pObj->m_pAnimation.reset(); // 애니 없음
 		}
 	}
 
 
 
 	return pObj;
+}
+
+std::shared_ptr<GameObject> GameObject::FindNodeByName(const std::string& name)
+{
+	if (m_strName == name) return shared_from_this();
+
+	for (auto& child : m_pChildren)
+	{
+		auto result = child->FindNodeByName(name);
+		if (result) return result;
+	}
+
+	return nullptr;
 }
 
 void GameObject::UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList)
@@ -131,8 +146,15 @@ void GameObject::UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice, ComPtr<ID
 	pd3dRenderCommandList->SetGraphicsRootDescriptorTable(1, m_pd3dDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 	// TODO : Update Animation data
-	if (m_pParent.expired() && m_pAnimation) {
-		m_pAnimation->UpdateShaderVariables(pd3dRenderCommandList);
+	if (m_pParent.expired()) {
+		if (m_pAnimation) {
+			m_pAnimation->UpdateShaderVariables(pd3dRenderCommandList);
+			//Animation::BindIdentityBones(pDevice, pd3dRenderCommandList, 5);
+		}
+		else {
+			Animation::BindIdentityBones(pDevice, pd3dRenderCommandList, 5);
+		}
+
 	}
 
 }

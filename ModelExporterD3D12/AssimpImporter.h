@@ -82,12 +82,7 @@ private:
 
 private:
 	// Scene 전역 스켈레톤
-	struct BoneInfoInternal {
-		std::string name;
-		int nodeIndex = -1;
-		XMFLOAT4X4 offsetRow; // row-major (ai offset을 ToRowMajor로 변환해 저장)
-	};
-	std::vector<BoneInfoInternal> m_bones;                // boneIndex -> BoneInfoInternal
+	std::vector<BONE_IMPORT_INFO> m_bones;                // boneIndex -> BoneInfoInternal
 	std::unordered_map<std::string, int> m_boneNameToIndex;// 이름 -> boneIndex
 
 	// Scene 전역 정점 가중치(정점ID는 각 Mesh의 Local index)
@@ -123,4 +118,8 @@ private:
 	SHADER_TYPE m_eShaderType = SHADER_TYPE_DIFFUSED;
 
 	std::shared_ptr<Camera> m_upCamera = nullptr;
+
+public:
+	XMFLOAT4X4 GetViewProj() { return m_upCamera->GetViewProjTransposed(); }
+
 };

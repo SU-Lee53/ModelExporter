@@ -54,7 +54,7 @@ public:
 
 public:
 	static std::shared_ptr<Mesh> LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const MESH_IMPORT_INFO& info);
-
+	auto& GetVertices() { return m_Vertices; }
 
 private:
 	std::vector<VertexType> m_Vertices;

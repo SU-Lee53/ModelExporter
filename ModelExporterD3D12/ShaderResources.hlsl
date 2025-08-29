@@ -76,7 +76,7 @@ cbuffer cbAnimationControllerData : register(b3)
 
 cbuffer AnimationTransforms : register(b4)
 {
-    float4x4 mtxTransforms[MAX_ANIMATION_KEYFRAMES];
+    float4x4 mtxBoneTransforms[MAX_ANIMATION_KEYFRAMES];
 };
 
 cbuffer BoneData : register(b5)

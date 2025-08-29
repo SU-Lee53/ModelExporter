@@ -55,40 +55,121 @@ struct CB_ANIMATION_TRANSFORM_DATA {
 	XMFLOAT4X4 xmf4x4Transforms[MAX_BONE_COUNT];
 };
 
-class Animation {
+class Animation : public std::enable_shared_from_this<Animation> {
 public:
-	void UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
+    struct Clip {
+        std::string name;
+        float       durationTicks = 0.f;
+        float       ticksPerSecond = 0.f;
+        float       frameRate = 30.f;
+        unsigned    frameCount = 0;
+        std::unordered_map<std::string, std::vector<AnimKeyframe>> channels; // node/bone name -> frames
+
+        XMFLOAT4X4 GetSRT(const std::string& strBoneKey, float fTime) {
+            auto it = channels.find(strBoneKey);
+            if (it == channels.end()) {
+                XMFLOAT4X4 xmf4x4Ret;
+                XMStoreFloat4x4(&xmf4x4Ret, XMMatrixIdentity());
+                return xmf4x4Ret;
+            }
+
+            const std::vector<AnimKeyframe>& keyframes = it->second;
+            XMFLOAT4X4 xmf4x4SRT;
+
+            for (int i = 0; i < keyframes.size() - 1; ++i) {
+                if ((fTime >= keyframes[i].fTime) && (fTime <= keyframes[i + 1].fTime)) {
+                    float fInterval = keyframes[i + 1].fTime - keyframes[i].fTime;
+                    float t = (fTime - keyframes[i].fTime) / fInterval;
+                    XMVECTOR S0 = XMLoadFloat3(&keyframes[i].xmf3ScaleKey);
+                    XMVECTOR S1 = XMLoadFloat3(&keyframes[i + 1].xmf3ScaleKey);
+                    XMVECTOR R0 = XMLoadFloat4(&keyframes[i].xmf4RotationKey);
+                    XMVECTOR R1 = XMLoadFloat4(&keyframes[i + 1].xmf4RotationKey);
+                    XMVECTOR T0 = XMLoadFloat3(&keyframes[i].xmf3PositionKey);
+                    XMVECTOR T1 = XMLoadFloat3(&keyframes[i + 1].xmf3PositionKey);
+
+                    XMVECTOR S = XMVectorLerp(S0, S1, t);
+                    XMVECTOR R = XMQuaternionSlerp(R0, R1, t);
+                    XMVECTOR T = XMVectorLerp(T0, T1, t);
+
+                    XMStoreFloat4x4(&xmf4x4SRT, XMMatrixAffineTransformation(S, XMVectorSet(0.f,0.f,0.f,1.f), R, T));
+                    return xmf4x4SRT;
+                }
+            }
+
+            XMStoreFloat4x4(&xmf4x4SRT, XMMatrixIdentity());
+            return xmf4x4SRT;
+        }
+
+    };
+    struct BoneRef {
+        std::string name;     // bone name
+        XMFLOAT4X4  offsetRow;// row-major (ai offset 전치 저장)
+    };
 
 public:
-	struct Data {
-		float	fDuration = 0.f;
-		float	fTicksPerSecond = 0.f;
-		int		nFrameCount = 0;
+    static std::shared_ptr<Animation>
+        LoadFromInfo(Microsoft::WRL::ComPtr<ID3D12Device> device,
+            Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd,
+            const std::vector<ANIMATION_IMPORT_INFO>& infos,
+            std::shared_ptr<GameObject> pRoot);
 
-		std::vector<AnimChannel> channels;
-	};
+    void UpdateShaderVariables(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd);
 
-	int		m_nCurrentAnimationIndex = 0;
-	float	m_fTimeElapsed = 0.f;
+    void Play(bool on) { m_bPlay = on; }
+    void SetClip(int idx);
+    int  GetClip() const { return m_nCurrentAnimationIndex; }
+    float GetTime() const { return m_fTimeElapsed; }
+    void  SetTime(float t) { m_fTimeElapsed = t; }
+    void  SetOwner(std::shared_ptr<GameObject> owner) { m_wpOwner = owner; }
 
-	std::vector<Data> m_AnimationDatas;
+    // 애니메이션이 “없을 때”도 VS가 b5를 요구하면 바인딩해야 함 → 아이덴티티 본 CB 제공
+    static void BindIdentityBones(Microsoft::WRL::ComPtr<ID3D12Device> device,
+        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd,
+        UINT rootParamIndexForBones);
 
-	ComPtr<ID3D12Resource> m_pControllerCBuffer;
-	UINT8* m_pControllerDataMappedPtr;
+    // 루트에서만 호출 (둘 다 CBV 바인딩)
+    void BindCBVs(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd,
+        UINT rootParamForCtrl, UINT rootParamForBones);
 
-	ComPtr<ID3D12Resource> m_pBoneTransformCBuffer;
-	UINT8* m_pBoneTransformMappedPtr;
-
-	std::weak_ptr<GameObject> m_wpOwner;
-	std::vector<Bone> m_bones;
-
-	bool m_bPlay = false;
-
-public:
-	static std::shared_ptr<Animation> LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, const std::vector<ANIMATION_IMPORT_INFO>& infos, std::shared_ptr<GameObject> pOwner);
-
+    auto& GetBones() { return m_bones; }
 
 public:
-	constexpr static UINT ANIMATION_DESCRIPTOR_COUNT_PER_DRAW = 2;
+    static constexpr UINT ANIMATION_DESCRIPTOR_COUNT_PER_DRAW = 0;
 
+private:
+    Animation() = default;
+
+    void buildBoneOrderFromImporterOrder(); // OBJECT_IMPORT_INFO::boneMap 기준
+    void allocateCBuffers(Microsoft::WRL::ComPtr<ID3D12Device> device);
+
+    void buildLocalMapForFrame(std::unordered_map<std::string, DirectX::XMMATRIX>& outLocal);
+    void buildGlobalByDFS(std::shared_ptr<GameObject> node,
+        const std::unordered_map<std::string, DirectX::XMMATRIX>& locals,
+        std::unordered_map<std::string, DirectX::XMMATRIX>& outGlobal,
+        DirectX::XMMATRIX parentGlobal);
+public:
+    // 현재 클립의 시간 m_fTimeElapsed 기준으로 글로벌 행렬 맵을 만들어준다.
+    // key = 노드명, value = Global(t)
+    void BuildGlobalForDebug(std::unordered_map<std::string, DirectX::XMMATRIX>& outGlobal) const;
+
+private:
+    std::weak_ptr<GameObject> m_wpOwner;
+
+    std::vector<Clip>         m_Clips;
+    int                       m_nCurrentAnimationIndex = 0;
+    float                     m_fTimeElapsed = 0.f;
+    bool                      m_bPlay = false;
+
+    std::vector<BoneRef>      m_bones;
+
+    ComPtr<ID3D12Resource>    m_pControllerCBuffer = nullptr;
+    UINT8* m_pControllerDataMappedPtr = nullptr;
+
+    ComPtr<ID3D12Resource>    m_pBoneTransformCBuffer = nullptr;
+    UINT8* m_pBoneTransformMappedPtr = nullptr;
+
+    // 아이덴티티 본 CB (애니 없음/스킨 없음 대응)
+    static ComPtr<ID3D12Resource> s_pIdentityBonesCB;
+    static UINT8* s_pIdentityBonesMapped;
+    static bool                   s_identityReady;
 };

@@ -9,6 +9,9 @@ public:
 
 public:
 	void GenerateViewMatrix();
+	XMFLOAT4X4 GetViewProjTransposed() {
+		return m_xmf4x4ViewProjectionTransposed;
+	}
 
 	void BindViewportAndScissorRects(ComPtr<ID3D12GraphicsCommandList> pd3dCommandList) const {
 		pd3dCommandList->RSSetViewports(1, &m_d3dViewport);

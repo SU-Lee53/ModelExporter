@@ -1,9 +1,13 @@
 #include "stdafx.h"
 #include "AssimpImporter.h"
+#include "BindPoseSanity.h"
+#include "SkeletonLines.h"
 #include <sstream>
 
 using namespace std;
 namespace fs = std::filesystem;
+
+SkeletonLineRenderer g_SkelLines;
 
 AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
 	: m_pd3dDevice{ pDevice }
@@ -20,6 +24,62 @@ AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
 	m_pShaders[SHADER_TYPE_ALBEDO]->Create(m_pd3dDevice);
 
 	m_upCamera = make_unique<Camera>(pDevice);
+
+	// skelton lines
+	{
+		UINT nCompileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+		ComPtr<ID3DBlob> pVSBlob = nullptr;
+		ComPtr<ID3DBlob> pPSBlob = nullptr;
+		ComPtr<ID3DBlob> pErrorBlob = nullptr;
+
+		// VS
+		HRESULT hr = ::D3DCompileFromFile(
+			L"DebugLines.hlsl",
+			NULL,
+			D3D_COMPILE_STANDARD_FILE_INCLUDE,
+			"VSMain",
+			"vs_5_1",
+			nCompileFlags,
+			0,
+			pVSBlob.GetAddressOf(),
+			pErrorBlob.GetAddressOf()
+		);
+
+		if (FAILED(hr))
+		{
+			if (pErrorBlob)
+			{
+				OutputDebugStringA((const char*)pErrorBlob->GetBufferPointer());
+				__debugbreak();
+			}
+		}
+
+		// PS
+		hr = ::D3DCompileFromFile(
+			L"DebugLines.hlsl",
+			NULL,
+			D3D_COMPILE_STANDARD_FILE_INCLUDE,
+			"PSMain",
+			"ps_5_1",
+			nCompileFlags,
+			0,
+			pPSBlob.GetAddressOf(),
+			pErrorBlob.GetAddressOf()
+		);
+
+		if (FAILED(hr))
+		{
+			if (pErrorBlob)
+			{
+				OutputDebugStringA((const char*)pErrorBlob->GetBufferPointer());
+				__debugbreak();
+			}
+		}
+		g_SkelLines.Create(pDevice, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(),
+			pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(),
+			/*RTV*/DXGI_FORMAT_R8G8B8A8_UNORM, /*DSV*/DXGI_FORMAT_D24_UNORM_S8_UINT);
+	}
+
 }
 
 AssimpImporter::~AssimpImporter()
@@ -114,6 +174,8 @@ void AssimpImporter::Run()
 	}
 
 	ImGui::End();
+
+	::DrawDebugUI();
 
 	m_upCamera->Update();
 }
@@ -219,6 +281,7 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 	m_pLoadedObject = GameObject::LoadFromImporter(m_pd3dDevice, m_pd3dCommandList, root, nullptr);
 	ExcuteCommandList();
 
+	::AfterSceneLoaded(m_rpScene);
 
 	return true;
 }
@@ -248,10 +311,10 @@ void AssimpImporter::CollectSkeletonFromScene(const aiScene* scene)
 			{
 				boneIndex = (int)m_bones.size();
 
-				BoneInfoInternal b{};
-				b.name = boneName;
-				b.nodeIndex = FindNodeIndexByName(scene->mRootNode, boneName);
-				b.offsetRow = ::aiMatrixToXMFLOAT4X4(aiBonePtr->mOffsetMatrix); // row-major 저장
+				BONE_IMPORT_INFO b{};
+				b.strName = boneName;
+				b.nNodeIndex = FindNodeIndexByName(scene->mRootNode, boneName);
+				b.xmf4x4Offset = ::aiMatrixToXMFLOAT4X4(aiBonePtr->mOffsetMatrix); // row-major 저장
 
 				m_bones.push_back(b);
 				m_boneNameToIndex[boneName] = boneIndex;
@@ -267,6 +330,9 @@ void AssimpImporter::CollectSkeletonFromScene(const aiScene* scene)
 			}
 		}
 	}
+
+	std::copy(m_bones.begin(), m_bones.end(), std::back_inserter(OBJECT_IMPORT_INFO::boneList));
+
 }
 
 void AssimpImporter::FillGlobalBoneMapToObjectStatic()
@@ -276,9 +342,9 @@ void AssimpImporter::FillGlobalBoneMapToObjectStatic()
 	for (auto& b : m_bones)
 	{
 		BONE_IMPORT_INFO out{};
-		out.strName = b.name;
-		out.nNodeIndex = b.nodeIndex;
-		out.xmf4x4Offset = b.offsetRow; // 이미 row-major
+		out.strName = b.strName;
+		out.nNodeIndex = b.nNodeIndex;
+		out.xmf4x4Offset = b.xmf4x4Offset; // 이미 row-major
 
 		OBJECT_IMPORT_INFO::boneMap[out.strName] = out;
 	}
@@ -375,6 +441,7 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 		auto it = vtxWeights.find(v);
 		if (it == vtxWeights.end()) {
 			info.blendIndices[v] = XMINT4(0, 0, 0, 0);
+			info.blendWeights[v] = XMFLOAT4(1, 0, 0, 0);
 			continue;
 		}
 
@@ -579,7 +646,7 @@ std::vector<ANIMATION_IMPORT_INFO> AssimpImporter::LoadAnimationData(const aiSce
 
 DirectX::XMFLOAT3 AssimpImporter::InterpolateVectorKeyframe(float fTime, aiVectorKey* keys, UINT nKeys)
 {
-	if (nKeys == 1)
+	if (nKeys == 0)
 		return XMFLOAT3(0, 0, 0);
 	
 	if (nKeys == 1)
@@ -892,7 +959,13 @@ void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<I
 		m_upCamera->UpdateShaderVariables(pd3dRenderCommandList, 0);
 
 		m_pLoadedObject->Render(pDevice, pd3dRenderCommandList);
+
+
+		// Anim Debug
+		g_SkelLines.Draw(pd3dRenderCommandList, GetViewProj(), m_pLoadedObject, m_pLoadedObject->GetAnimation().get(), /*axisLen*/0.08f);
+
 	}
+
 }
 
 #pragma endregion

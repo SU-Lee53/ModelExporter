@@ -1,60 +1,57 @@
 #include "ShaderResources.hlsl"
 
-float4 SkinningPosition(float3 pos, int4 indices, float4 weights)
-{
-    float4 skinned = float4(0, 0, 0, 0);
-    [unroll]
-    for (int i = 0; i < 4; ++i)
-    {
-        int boneIndex = indices[i];
-        float weight = weights[i];
-        if (weight > 0)
-        {
-            skinned += mul(float4(pos, 1.0f), mtxTransforms[boneIndex]) * weight;
-        }
-    }
-    return skinned;
-}
-
-float3 SkinningNormal(float3 normal, int4 indices, float4 weights)
-{
-    float3 skinned = float3(0, 0, 0);
-    [unroll]
-    for (int i = 0; i < 4; ++i)
-    {
-        int boneIndex = indices[i];
-        float weight = weights[i];
-        if (weight > 0)
-        {
-            // w=0 으로 곱해서 방향벡터만 변환
-            skinned += mul(float4(normal, 0.0f), mtxTransforms[boneIndex]).xyz * weight;
-        }
-    }
-    return normalize(skinned);
-}
-
-
 VS_OUTPUT VSMain(VS_INPUT input)
 {
-    VS_OUTPUT output;
-    
-    // 스키닝된 정점
-    float4 skinnedPos = SkinningPosition(input.pos, input.blendIndices, input.blendWeight);
-    float3 skinnedNormal = SkinningNormal(input.normal, input.blendIndices, input.blendWeight);
-    float3 skinnedTangent = SkinningNormal(input.tangent, input.blendIndices, input.blendWeight);
-    float3 skinnedBiTangent = SkinningNormal(input.biTangent, input.blendIndices, input.blendWeight);
+    VS_OUTPUT o;
+    float wsum = input.blendWeight.x + input.blendWeight.y + input.blendWeight.z + input.blendWeight.w;
+    bool skinned = (wsum > 1e-5);
 
-    float4 worldPos = mul(skinnedPos, gmtxWorld);
-    
-    output.worldPos = worldPos;
-    output.pos = mul(worldPos, gmtxViewProjection);
-    output.worldNormal = mul(float4(skinnedNormal, 0.f), gmtxWorld);
-    output.worldTangent = mul(float4(skinnedTangent, 0.f), gmtxWorld);
-    output.worldBiTangent = mul(float4(skinnedBiTangent, 0.f), gmtxWorld);
-    output.color = input.color;
-    output.TexCoord = input.TexCoord[0];
-    
-    return output;
+    float4 modelPos;
+    float3 modelNormal;
+
+    if (skinned)
+    {
+        // 스키닝 (모델 로컬)
+        float4 p = float4(input.pos, 1.0f);
+        float3 n = input.normal;
+
+        float4 sp = 0;
+        float3 sn = 0;
+        [unroll]
+        for (int i = 0; i < 4; i++)
+        {
+            uint idx = input.blendIndices[i];
+            //float w = input.blendWeight[i];
+            float w = input.blendWeight[i];
+            float4x4 M = mtxBoneTransforms[idx];
+
+            sp += mul(p, M) * w;
+            float3 n3 = mul(float4(n, 0), M).xyz;
+            sn += n3 * w;
+        }
+
+        modelPos = sp;
+        modelNormal = normalize(sn);
+
+        // 스키닝 결과는 "모델 로컬" → 월드만 적용
+        float4 worldPos = mul(modelPos, gmtxWorld);
+        o.pos = mul(worldPos, gmtxViewProjection);
+        o.worldPos = worldPos;
+        o.worldNormal = normalize(mul(float4(modelNormal, 0), gmtxWorld));
+    }
+    else
+    {
+        // 비스키닝 (기존 경로) : 로컬→월드
+        float4x4 mtxToWorld = mul(gmtxLocal, gmtxWorld);
+        float4 worldPos = mul(float4(input.pos, 1), mtxToWorld);
+        o.pos = mul(worldPos, gmtxViewProjection);
+        o.worldPos = worldPos;
+        o.worldNormal = normalize(mul(float4(input.normal, 0), mtxToWorld));
+    }
+
+    o.TexCoord = input.TexCoord[0];
+    o.color = input.color;
+    return o;
 }
 
 // ====================

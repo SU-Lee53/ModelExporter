@@ -49,8 +49,10 @@ public:
 public:
 	std::string GetName() const { return m_strName; }
 	XMFLOAT4X4 GetLocalTransform() const { return m_xmf4x4Transform; }
+	auto GetParent() { return m_pParent.lock(); }
 	const auto& GetChildren() { return m_pChildren; }
 	const auto& GetBone() { return m_pBone; }
+	auto GetAnimation() const { return m_pAnimation; }
 
 	void UpdateShaderVariables(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
 	void Render(ComPtr<ID3D12Device14> pDevice, ComPtr<ID3D12GraphicsCommandList> pd3dRenderCommandList);
@@ -62,6 +64,9 @@ public:
 public:
 	static std::shared_ptr<GameObject> 
 		LoadFromImporter(ComPtr<ID3D12Device14> pd3dDevice, ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, std::shared_ptr<OBJECT_IMPORT_INFO> pInfo, std::shared_ptr<GameObject> m_pParent);
+
+public:
+	std::shared_ptr<GameObject> FindNodeByName(const std::string& name);
 
 private:
 	std::vector<std::pair<std::shared_ptr<Mesh>, std::shared_ptr<Material>>> m_pMeshMaterialPairs;
