@@ -9,9 +9,6 @@ public:
 
 public:
 	void GenerateViewMatrix();
-	XMFLOAT4X4 GetViewProjTransposed() {
-		return m_xmf4x4ViewProjectionTransposed;
-	}
 
 	void BindViewportAndScissorRects(ComPtr<ID3D12GraphicsCommandList> pd3dCommandList) const {
 		pd3dCommandList->RSSetViewports(1, &m_d3dViewport);
@@ -21,6 +18,14 @@ public:
 	void UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> pd3dCommandList, UINT rootParameterIndex) {
 		::memcpy(m_pMappedPtr, &m_xmf4x4ViewProjectionTransposed, sizeof(XMFLOAT4X4));
 		pd3dCommandList->SetGraphicsRootConstantBufferView(rootParameterIndex, m_pCBViewProj->GetGPUVirtualAddress());
+	}
+
+	D3D12_VIEWPORT GetViewport() {
+		return m_d3dViewport;
+	}
+
+	XMFLOAT4X4 GetViewProjectionTransposed() {
+		return m_xmf4x4ViewProjectionTransposed;
 	}
 
 private:

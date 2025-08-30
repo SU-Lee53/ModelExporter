@@ -5,25 +5,6 @@ ComPtr<ID3D12Resource>  Animation::s_pIdentityBonesCB = nullptr;
 UINT8*                  Animation::s_pIdentityBonesMapped = nullptr;
 bool                    Animation::s_identityReady = false;
 
-
-static DirectX::XMMATRIX MakeAffine(const AnimKeyframe& k) {
-    XMVECTOR S = XMLoadFloat3(&k.xmf3ScaleKey);
-    XMVECTOR R = XMLoadFloat4(&k.xmf4RotationKey);
-    XMVECTOR T = XMLoadFloat3(&k.xmf3PositionKey);
-
-    // 스케일 0 방지
-    if (fabsf(XMVectorGetX(S)) < 1e-6f &&
-        fabsf(XMVectorGetY(S)) < 1e-6f &&
-        fabsf(XMVectorGetZ(S)) < 1e-6f)
-        S = XMVectorSet(1, 1, 1, 0);
-
-    // 쿼터니언 정규화 + 0 방지
-    if (XMVector4Equal(R, XMVectorZero())) R = XMQuaternionIdentity();
-    else R = XMQuaternionNormalize(R);
-
-    return XMMatrixAffineTransformation(S, XMVectorZero(), R, T); // S * R * T (row-major)
-}
-
 std::shared_ptr<Animation>
 Animation::LoadFromInfo(ComPtr<ID3D12Device> device,
     ComPtr<ID3D12GraphicsCommandList> /*cmd*/,
@@ -75,10 +56,11 @@ void Animation::buildBoneOrderFromImporterOrder()
     m_bones.clear();
     m_bones.reserve(OBJECT_IMPORT_INFO::boneList.size());
     for (const auto& b : OBJECT_IMPORT_INFO::boneList) {
-        BoneRef br{};
-        br.name = b.strName;
-        br.offsetRow = b.xmf4x4Offset; // row-major
-        m_bones.push_back(br);         // <-- 인덱스 0..N-1 == Importer 인덱스
+        Bone bone{};
+        bone.strName = b.strName;
+        bone.xmf4x4Offset = b.xmf4x4Offset; // row-major
+        bone.nParentIndex = b.nParentIndex; // row-major
+        m_bones.push_back(bone);         // <-- 인덱스 0..N-1 == Importer 인덱스
     }
 }
 
@@ -118,7 +100,7 @@ void Animation::buildLocalMapForFrame(std::unordered_map<std::string, XMMATRIX>&
     //unsigned frameIndex = (unsigned)std::min<float>(std::max(0.f, (float)clip.frameCount - 1.f), floorf(m_fTimeElapsed * clip.frameRate));
 
     for (auto& [name, frames] : clip.channels) {
-        XMFLOAT4X4 xmf4x4SRT = clip.GetSRT(name, m_fTimeElapsed);
+        XMFLOAT4X4 xmf4x4SRT = clip.GetSRT(name, m_fTimeElapsed, m_bLocalSRT);
         outLocal[name] = XMLoadFloat4x4(&xmf4x4SRT); // SRT
     }
 }
@@ -140,7 +122,14 @@ void Animation::buildGlobalByDFS(std::shared_ptr<GameObject> node,
         L = XMLoadFloat4x4(&node->GetLocalTransform());
     }
 
-    XMMATRIX G = XMMatrixMultiply(L, parentGlobal); // local * parent
+    XMMATRIX G{};
+    if (m_bGlobalMulOrder) {
+        G = XMMatrixMultiply(L, parentGlobal); // local * parent
+    }
+    else {
+        G = XMMatrixMultiply(parentGlobal, L); // parent * local
+    }
+
     outGlobal[name] = G;
 
     for (auto& ch : node->GetChildren())
@@ -171,6 +160,7 @@ void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> cmd)
     float fDurationSec = clip.durationTicks / clip.ticksPerSecond;
     m_fTimeElapsed = m_fTimeElapsed > fDurationSec ? fmodf(m_fTimeElapsed, fDurationSec) : m_fTimeElapsed;
 
+    /*
     // 1) 채널별 로컬
     std::unordered_map<std::string, XMMATRIX> local;
     buildLocalMapForFrame(local);
@@ -191,12 +181,16 @@ void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> cmd)
     for (UINT i = 0; i < boneCount; ++i) {
         const auto& br = m_bones[i];
         XMMATRIX G = XMMatrixIdentity();
-        auto it = global.find(br.name);
+        auto it = global.find(br.strName);
         if (it != global.end()) G = it->second;
 
-        XMMATRIX O = XMLoadFloat4x4(&br.offsetRow); // row-major
-        XMMATRIX F = XMMatrixMultiply(G, O);        // final = global * offset
-        F = XMMatrixTranspose(F);                   // GPU column-major 기대
+        XMMATRIX O = XMLoadFloat4x4(&br.xmf4x4Offset);  // row-major
+        XMMATRIX F = XMMatrixMultiply(G, O);            // final = global * offset
+
+        if (m_bFinalTranspose) {
+            F = XMMatrixTranspose(F);                   // GPU column-major 기대
+        }
+
         XMStoreFloat4x4(&pOut->xmf4x4Transforms[i], F);
     }
     // 남는 슬롯은 아이덴티티로
@@ -205,6 +199,88 @@ void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> cmd)
     }
 
     // 4) 컨트롤 CB
+    auto* pCtrl = reinterpret_cast<CB_ANIMATION_CONTROL_DATA*>(m_pControllerDataMappedPtr);
+    pCtrl->nCurrentAnimationIndex = m_nCurrentAnimationIndex;
+    pCtrl->fDuration = clip.durationTicks;
+    pCtrl->fTicksPerSecond = clip.ticksPerSecond;
+    pCtrl->fTimeElapsed = m_fTimeElapsed;
+    */
+
+
+    //XMFLOAT4X4 xmf4x4Identity;
+    //XMStoreFloat4x4(&xmf4x4Identity, XMMatrixIdentity());
+    //
+    //std::vector<XMFLOAT4X4> finalTransforms(MAX_BONE_COUNT);
+    //std::vector<XMFLOAT4X4> tempAnimationBoneTransforms(MAX_BONE_COUNT, xmf4x4Identity);
+    //
+    //for (int i = 0; i < m_bones.size(); ++i) {
+    //    XMFLOAT4X4 xmf4x4AnimationSRT = clip.GetSRT(m_bones[i].strName, m_fTimeElapsed, m_bLocalSRT);
+    //
+    //    auto pRoot = m_wpOwner.lock();
+    //    auto pCur = pRoot->FindNodeByName(m_bones[i].strName);
+    //    XMFLOAT4X4 xmf4x4toRoot = pCur->GetLocalTransform();
+    //    XMFLOAT4X4 xmf4x4InverseGlobal;
+    //    XMStoreFloat4x4(&xmf4x4InverseGlobal, XMMatrixInverse(nullptr, XMLoadFloat4x4(&xmf4x4toRoot)));
+    //
+    //    XMFLOAT4X4 xmf4x4Parent;
+    //    if (m_bones[i].nParentIndex >= 0) {
+    //        xmf4x4Parent = tempAnimationBoneTransforms[m_bones[i].nParentIndex];
+    //    }
+    //    else {
+    //        XMStoreFloat4x4(&xmf4x4Parent, XMMatrixIdentity());
+    //    }
+    //
+    //    XMMATRIX xmmtxAnimationSRT = XMLoadFloat4x4(&xmf4x4AnimationSRT);
+    //    XMMATRIX xmmtxParent = XMLoadFloat4x4(&xmf4x4Parent);
+    //
+    //    XMMATRIX xmmtxBoneTransform = m_bGlobalMulOrder ? XMMatrixMultiply(xmmtxAnimationSRT, xmmtxParent) : XMMatrixMultiply(xmmtxParent, xmmtxAnimationSRT);
+    //
+    //    XMStoreFloat4x4(&tempAnimationBoneTransforms[i], xmmtxBoneTransform);
+    //
+    //    XMMATRIX xmmtxInvGlobal = XMLoadFloat4x4(&xmf4x4InverseGlobal);
+    //
+    //    XMStoreFloat4x4(&finalTransforms[i], XMMatrixMultiplyTranspose(xmmtxInvGlobal, xmmtxBoneTransform));
+    //}
+    //for (UINT i = m_bones.size(); i < MAX_BONE_COUNT; ++i) {
+    //    XMStoreFloat4x4(&finalTransforms[i], XMMatrixTranspose(XMMatrixIdentity()));
+    //}
+
+    size_t nBones = m_bones.size();
+
+    std::vector<XMFLOAT4X4> toParentTransforms(nBones);
+    std::vector<XMFLOAT4X4> toRootTransforms(nBones);
+    std::vector<XMFLOAT4X4> finalTransforms(MAX_BONE_COUNT);
+
+    for (int i = 0; i < nBones; ++i) {
+        toParentTransforms[i] = clip.GetSRT(m_bones[i].strName, m_fTimeElapsed, m_bLocalSRT);
+    }
+
+    toRootTransforms[0] = toParentTransforms[0];
+
+    for (int i = 0; i < nBones; ++i) {
+        XMMATRIX xmmtxToParent = XMLoadFloat4x4(&toParentTransforms[i]);
+        int nParent = m_bones[i].nParentIndex;
+        XMMATRIX xmmtxParentToRoot = nParent < 0 ? XMMatrixIdentity() : XMLoadFloat4x4(&toRootTransforms[nParent]);
+        XMMATRIX xmmtxToRoot = XMMatrixMultiply(xmmtxToParent, xmmtxParentToRoot);
+        XMStoreFloat4x4(&toRootTransforms[i], xmmtxToRoot);
+    }
+
+    for (int i = 0; i < nBones; ++i) {
+        XMMATRIX xmmtxBoneOffset = XMLoadFloat4x4(&m_bones[i].xmf4x4Offset);
+        XMMATRIX xmmtxToRootTransform = XMLoadFloat4x4(&toRootTransforms[i]);
+        XMMATRIX xmTransform = XMMatrixMultiply(xmmtxBoneOffset, xmmtxToRootTransform);
+        XMStoreFloat4x4(&finalTransforms[i], m_bFinalTranspose ? XMMatrixTranspose(xmTransform) : xmTransform);
+    }
+
+    for (int i = nBones; i < MAX_BONE_COUNT; ++i) {
+        XMStoreFloat4x4(&finalTransforms[i], XMMatrixIdentity());
+    }
+
+
+    auto* pOut = reinterpret_cast<CB_ANIMATION_TRANSFORM_DATA*>(m_pBoneTransformMappedPtr);
+    UINT boneCount = (UINT)std::min<size_t>(MAX_BONE_COUNT, m_bones.size());
+    std::memcpy(pOut, finalTransforms.data(), sizeof(XMFLOAT4X4) * MAX_BONE_COUNT);
+
     auto* pCtrl = reinterpret_cast<CB_ANIMATION_CONTROL_DATA*>(m_pControllerDataMappedPtr);
     pCtrl->nCurrentAnimationIndex = m_nCurrentAnimationIndex;
     pCtrl->fDuration = clip.durationTicks;
@@ -226,48 +302,59 @@ void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> cmd)
             ImGui::SliderFloat("fTimeElapsed", &m_fTimeElapsed, 0.f, fDurationSec);
         }
 
-
-        if (ImGui::TreeNode("Local")) {
-            for (auto& [name, xmmtxTransform] : local) {
-                ImGui::Text("Bone Name : %s", name.c_str());
-                XMFLOAT4X4 xmf4x4SRT; XMStoreFloat4x4(&xmf4x4SRT, xmmtxTransform);
-                ImGui::Text("Matrix : \n%s", ::FormatMatrix(xmf4x4SRT).c_str());
-                ImGui::Separator();
-            }
-
-            ImGui::TreePop();
+        if (ImGui::Button(m_bLocalSRT ? "Local SRT" : "Local TRS")) {
+            m_bLocalSRT = !m_bLocalSRT;
         }
 
-        if (ImGui::TreeNode("global")) {
-            for (auto& [name, xmmtxTransform] : global) {
-                ImGui::Text("Bone Name : %s", name.c_str());
-                XMFLOAT4X4 xmf4x4SRT; XMStoreFloat4x4(&xmf4x4SRT, xmmtxTransform);
-                ImGui::Text("Matrix : \n%s", ::FormatMatrix(xmf4x4SRT).c_str());
-                ImGui::Separator();
-            }
-
-            ImGui::TreePop();
+        if (ImGui::Button(m_bGlobalMulOrder ? "Global local * parent" : "Global parent * local")) {
+            m_bGlobalMulOrder = !m_bGlobalMulOrder;
         }
 
-        if (ImGui::TreeNode("Final")) {
-            for (int i = 0; i < boneCount; ++i) {
-                ImGui::Text("Bone Index : %d", i);
-                ImGui::Text("Bone Name : %s", m_bones[i].name.c_str());
-                ImGui::Text("Matrix : \n%s", ::FormatMatrix(pOut->xmf4x4Transforms[i]).c_str());
-                ImGui::Separator();
-            }
-            ImGui::TreePop();
+        if (ImGui::Button(m_bFinalTranspose ? "Final Transpose : Y" : "Final Transpose : N")) {
+            m_bFinalTranspose = !m_bFinalTranspose;
         }
 
-        if (ImGui::TreeNode("Offset")) {
-            for (int i = 0; i < boneCount; ++i) {
-                ImGui::Text("Bone Index : %d", i);
-                ImGui::Text("Bone Name : %s", m_bones[i].name.c_str());
-                ImGui::Text("Matrix : \n%s", ::FormatMatrix(m_bones[i].offsetRow).c_str());
-                ImGui::Separator();
-            }
-            ImGui::TreePop();
-        }
+        //  if (ImGui::TreeNode("Local")) {
+        //      for (auto& [name, xmmtxTransform] : local) {
+        //          ImGui::Text("Bone Name : %s", name.c_str());
+        //          XMFLOAT4X4 xmf4x4SRT; XMStoreFloat4x4(&xmf4x4SRT, xmmtxTransform);
+        //          ImGui::Text("Matrix : \n%s", ::FormatMatrix(xmf4x4SRT).c_str());
+        //          ImGui::Separator();
+        //      }
+        //  
+        //      ImGui::TreePop();
+        //  }
+        //  
+        //  if (ImGui::TreeNode("global")) {
+        //      for (auto& [name, xmmtxTransform] : global) {
+        //          ImGui::Text("Bone Name : %s", name.c_str());
+        //          XMFLOAT4X4 xmf4x4SRT; XMStoreFloat4x4(&xmf4x4SRT, xmmtxTransform);
+        //          ImGui::Text("Matrix : \n%s", ::FormatMatrix(xmf4x4SRT).c_str());
+        //          ImGui::Separator();
+        //      }
+        //  
+        //      ImGui::TreePop();
+        //  }
+        //  
+        //  if (ImGui::TreeNode("Final")) {
+        //      for (int i = 0; i < boneCount; ++i) {
+        //          ImGui::Text("Bone Index : %d", i);
+        //          ImGui::Text("Bone Name : %s", m_bones[i].name.c_str());
+        //          ImGui::Text("Matrix : \n%s", ::FormatMatrix(pOut->xmf4x4Transforms[i]).c_str());
+        //          ImGui::Separator();
+        //      }
+        //      ImGui::TreePop();
+        //  }
+        //  
+        //  if (ImGui::TreeNode("Offset")) {
+        //      for (int i = 0; i < boneCount; ++i) {
+        //          ImGui::Text("Bone Index : %d", i);
+        //          ImGui::Text("Bone Name : %s", m_bones[i].name.c_str());
+        //          ImGui::Text("Matrix : \n%s", ::FormatMatrix(m_bones[i].offsetRow).c_str());
+        //          ImGui::Separator();
+        //      }
+        //      ImGui::TreePop();
+        //  }
 
 
     }

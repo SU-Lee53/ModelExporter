@@ -117,9 +117,9 @@ private:
 	std::array<std::shared_ptr<Shader>, SHADER_TYPE_COUNT> m_pShaders = {};
 	SHADER_TYPE m_eShaderType = SHADER_TYPE_DIFFUSED;
 
-	std::shared_ptr<Camera> m_upCamera = nullptr;
+	std::shared_ptr<Camera> m_pCamera = nullptr;
 
 public:
-	XMFLOAT4X4 GetViewProj() { return m_upCamera->GetViewProjTransposed(); }
+	std::shared_ptr<Camera> GetCamera() { return m_pCamera; }
 
 };

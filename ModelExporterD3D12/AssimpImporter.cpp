@@ -1,13 +1,10 @@
 #include "stdafx.h"
 #include "AssimpImporter.h"
 #include "BindPoseSanity.h"
-#include "SkeletonLines.h"
 #include <sstream>
 
 using namespace std;
 namespace fs = std::filesystem;
-
-SkeletonLineRenderer g_SkelLines;
 
 AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
 	: m_pd3dDevice{ pDevice }
@@ -23,62 +20,7 @@ AssimpImporter::AssimpImporter(ComPtr<ID3D12Device14> pDevice)
 	m_pShaders[SHADER_TYPE_DIFFUSED]->Create(m_pd3dDevice);
 	m_pShaders[SHADER_TYPE_ALBEDO]->Create(m_pd3dDevice);
 
-	m_upCamera = make_unique<Camera>(pDevice);
-
-	// skelton lines
-	{
-		UINT nCompileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-		ComPtr<ID3DBlob> pVSBlob = nullptr;
-		ComPtr<ID3DBlob> pPSBlob = nullptr;
-		ComPtr<ID3DBlob> pErrorBlob = nullptr;
-
-		// VS
-		HRESULT hr = ::D3DCompileFromFile(
-			L"DebugLines.hlsl",
-			NULL,
-			D3D_COMPILE_STANDARD_FILE_INCLUDE,
-			"VSMain",
-			"vs_5_1",
-			nCompileFlags,
-			0,
-			pVSBlob.GetAddressOf(),
-			pErrorBlob.GetAddressOf()
-		);
-
-		if (FAILED(hr))
-		{
-			if (pErrorBlob)
-			{
-				OutputDebugStringA((const char*)pErrorBlob->GetBufferPointer());
-				__debugbreak();
-			}
-		}
-
-		// PS
-		hr = ::D3DCompileFromFile(
-			L"DebugLines.hlsl",
-			NULL,
-			D3D_COMPILE_STANDARD_FILE_INCLUDE,
-			"PSMain",
-			"ps_5_1",
-			nCompileFlags,
-			0,
-			pPSBlob.GetAddressOf(),
-			pErrorBlob.GetAddressOf()
-		);
-
-		if (FAILED(hr))
-		{
-			if (pErrorBlob)
-			{
-				OutputDebugStringA((const char*)pErrorBlob->GetBufferPointer());
-				__debugbreak();
-			}
-		}
-		g_SkelLines.Create(pDevice, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(),
-			pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(),
-			/*RTV*/DXGI_FORMAT_R8G8B8A8_UNORM, /*DSV*/DXGI_FORMAT_D24_UNORM_S8_UINT);
-	}
+	m_pCamera = make_unique<Camera>(pDevice);
 
 }
 
@@ -177,7 +119,7 @@ void AssimpImporter::Run()
 
 	::DrawDebugUI();
 
-	m_upCamera->Update();
+	m_pCamera->Update();
 }
 
 void AssimpImporter::LoadFBXFilesFromPath(std::string_view svPath)
@@ -292,18 +234,16 @@ void AssimpImporter::CollectSkeletonFromScene(const aiScene* scene)
 	m_boneNameToIndex.clear();
 	m_meshVertexWeights.clear();
 
-	// 모든 Mesh 순회
+	// ---- 1st pass: bone 목록/인덱스/오프셋/가중치 수집 (기존 로직 그대로) ----
 	for (unsigned m = 0; m < scene->mNumMeshes; ++m)
 	{
 		const aiMesh* mesh = scene->mMeshes[m];
-
-		// mesh 로컬의 vertexId → (boneIndex, weight) 목록
-		auto& vtxWeights = m_meshVertexWeights[mesh]; // 새 map 생성
+		auto& vtxWeights = m_meshVertexWeights[mesh];
 
 		for (unsigned j = 0; j < mesh->mNumBones; ++j)
 		{
 			const aiBone* aiBonePtr = mesh->mBones[j];
-			string boneName(aiBonePtr->mName.C_Str());
+			std::string boneName(aiBonePtr->mName.C_Str());
 
 			int boneIndex = 0;
 			auto it = m_boneNameToIndex.find(boneName);
@@ -314,7 +254,7 @@ void AssimpImporter::CollectSkeletonFromScene(const aiScene* scene)
 				BONE_IMPORT_INFO b{};
 				b.strName = boneName;
 				b.nNodeIndex = FindNodeIndexByName(scene->mRootNode, boneName);
-				b.xmf4x4Offset = ::aiMatrixToXMFLOAT4X4(aiBonePtr->mOffsetMatrix); // row-major 저장
+				b.xmf4x4Offset = ::aiMatrixToXMFLOAT4X4(aiBonePtr->mOffsetMatrix); // row-major
 
 				m_bones.push_back(b);
 				m_boneNameToIndex[boneName] = boneIndex;
@@ -323,7 +263,6 @@ void AssimpImporter::CollectSkeletonFromScene(const aiScene* scene)
 				boneIndex = it->second;
 			}
 
-			// 정점별 Weight 누적 (mesh-local vertex index)
 			for (unsigned k = 0; k < aiBonePtr->mNumWeights; ++k) {
 				const aiVertexWeight vw = aiBonePtr->mWeights[k];
 				vtxWeights[vw.mVertexId].push_back({ boneIndex, vw.mWeight });
@@ -331,6 +270,37 @@ void AssimpImporter::CollectSkeletonFromScene(const aiScene* scene)
 		}
 	}
 
+	// ---- 2nd pass: 부모 본 인덱스 결정 ----
+	// 이름으로 aiNode* 찾는 작은 헬퍼 (scene 루트부터 DFS)
+	std::function<const aiNode* (const aiNode*, std::string_view)> findNodePtrByName =
+		[&](const aiNode* n, std::string_view name) -> const aiNode*
+		{
+			if (n->mName.C_Str() == name) return n;
+			for (unsigned i = 0; i < n->mNumChildren; ++i)
+				if (auto* r = findNodePtrByName(n->mChildren[i], name)) return r;
+			return nullptr;
+		};
+
+	for (int i = 0; i < (int)m_bones.size(); ++i)
+	{
+		const std::string& myName = m_bones[i].strName;
+		const aiNode* node = findNodePtrByName(scene->mRootNode, myName);
+		int parentIdx = -1;
+
+		// 상위로 올라가며 boneNameToIndex에 존재하는 첫 노드를 부모 본으로 간주
+		for (const aiNode* p = node ? node->mParent : nullptr; p != nullptr; p = p->mParent)
+		{
+			auto it = m_boneNameToIndex.find(p->mName.C_Str());
+			if (it != m_boneNameToIndex.end()) { parentIdx = it->second; break; }
+		}
+
+		m_bones[i].nParentIndex = parentIdx; // ★ HERE
+	}
+
+	// (선택) 필요하다면 여기서 디버그 출력/검증 가능
+
+	// ---- 기존처럼 전역 정적 리스트로 복사 ----
+	OBJECT_IMPORT_INFO::boneList.clear();
 	std::copy(m_bones.begin(), m_bones.end(), std::back_inserter(OBJECT_IMPORT_INFO::boneList));
 
 }
@@ -345,6 +315,7 @@ void AssimpImporter::FillGlobalBoneMapToObjectStatic()
 		out.strName = b.strName;
 		out.nNodeIndex = b.nNodeIndex;
 		out.xmf4x4Offset = b.xmf4x4Offset; // 이미 row-major
+		out.nParentIndex = b.nParentIndex;   // ★ NEW
 
 		OBJECT_IMPORT_INFO::boneMap[out.strName] = out;
 	}
@@ -955,14 +926,10 @@ void AssimpImporter::RenderLoadedObject(ComPtr<ID3D12Device14> pDevice, ComPtr<I
 	if (m_pLoadedObject) {
 		m_pShaders[m_eShaderType]->Bind(pd3dRenderCommandList);
 
-		m_upCamera->BindViewportAndScissorRects(pd3dRenderCommandList);
-		m_upCamera->UpdateShaderVariables(pd3dRenderCommandList, 0);
+		m_pCamera->BindViewportAndScissorRects(pd3dRenderCommandList);
+		m_pCamera->UpdateShaderVariables(pd3dRenderCommandList, 0);
 
 		m_pLoadedObject->Render(pDevice, pd3dRenderCommandList);
-
-
-		// Anim Debug
-		g_SkelLines.Draw(pd3dRenderCommandList, GetViewProj(), m_pLoadedObject, m_pLoadedObject->GetAnimation().get(), /*axisLen*/0.08f);
 
 	}
 

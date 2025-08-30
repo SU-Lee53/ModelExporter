@@ -65,7 +65,7 @@ public:
         unsigned    frameCount = 0;
         std::unordered_map<std::string, std::vector<AnimKeyframe>> channels; // node/bone name -> frames
 
-        XMFLOAT4X4 GetSRT(const std::string& strBoneKey, float fTime) {
+        XMFLOAT4X4 GetSRT(const std::string& strBoneKey, float fTime, BOOL bSRTOrder) {
             auto it = channels.find(strBoneKey);
             if (it == channels.end()) {
                 XMFLOAT4X4 xmf4x4Ret;
@@ -90,8 +90,23 @@ public:
                     XMVECTOR S = XMVectorLerp(S0, S1, t);
                     XMVECTOR R = XMQuaternionSlerp(R0, R1, t);
                     XMVECTOR T = XMVectorLerp(T0, T1, t);
+                    //XMMATRIX xmmtxSRT = XMMatrixAffineTransformation(S, XMVectorSet(0.f, 0.f, 0.f, 1.f), R, T)
 
-                    XMStoreFloat4x4(&xmf4x4SRT, XMMatrixAffineTransformation(S, XMVectorSet(0.f,0.f,0.f,1.f), R, T));
+                    XMMATRIX Sm = XMMatrixScalingFromVector(S);
+                    XMMATRIX Rm = XMMatrixRotationQuaternion(XMQuaternionNormalize(R));
+                    XMMATRIX Tm = XMMatrixTranslationFromVector(T);
+
+                    XMMATRIX xmmtxSRT;
+
+                    if (bSRTOrder) {
+                        xmmtxSRT = XMMatrixMultiply(Sm, XMMatrixMultiply(Rm, Tm));
+                    }
+                    else {
+                        xmmtxSRT = XMMatrixMultiply(Tm, XMMatrixMultiply(Rm, Sm));
+                    }
+
+
+                    XMStoreFloat4x4(&xmf4x4SRT, xmmtxSRT);
                     return xmf4x4SRT;
                 }
             }
@@ -100,10 +115,6 @@ public:
             return xmf4x4SRT;
         }
 
-    };
-    struct BoneRef {
-        std::string name;     // bone name
-        XMFLOAT4X4  offsetRow;// row-major (ai offset 전치 저장)
     };
 
 public:
@@ -160,7 +171,7 @@ private:
     float                     m_fTimeElapsed = 0.f;
     bool                      m_bPlay = false;
 
-    std::vector<BoneRef>      m_bones;
+    std::vector<Bone>      m_bones;
 
     ComPtr<ID3D12Resource>    m_pControllerCBuffer = nullptr;
     UINT8* m_pControllerDataMappedPtr = nullptr;
@@ -172,4 +183,12 @@ private:
     static ComPtr<ID3D12Resource> s_pIdentityBonesCB;
     static UINT8* s_pIdentityBonesMapped;
     static bool                   s_identityReady;
+
+private:
+    // Debug
+    BOOL m_bGlobalMulOrder = true;
+    BOOL m_bFinalTranspose = true;
+    BOOL m_bLocalSRT = true;
+
+
 };
