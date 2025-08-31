@@ -59,8 +59,8 @@
 // DirectXTex
 #include "DDSTextureLoader12.h"
 #include "WICTextureLoader12.h"
-#include "../library/include/DirectXTex/DirectXTex.h"
-#include "../library/include/DirectXTex/DirectXTex.inl"
+#include <DirectXTex/DirectXTex.h>
+#include <DirectXTex/DirectXTex.inl>
 #include <wincodec.h>
 
 using namespace DirectX;
@@ -80,12 +80,13 @@ using namespace Microsoft::WRL;
 #include "../ImGui/imgui_stdlib.h"
 
 // Assimp
-#include "../library/include/assimp/Importer.hpp"
-#include "../library/include/assimp/scene.h"
-#include "../library/include/assimp/postprocess.h"
-#include "../library/include/assimp/DefaultLogger.hpp"
-#include "../library/include/assimp/importerdesc.h"
-#include "../library/include/assimp/pbrmaterial.h"
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+#include <assimp/DefaultLogger.hpp>
+#include <assimp/importerdesc.h>
+#include <assimp/pbrmaterial.h>
+
 
 // lib link
 #if defined(_DEBUG)

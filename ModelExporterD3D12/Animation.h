@@ -76,6 +76,29 @@ public:
             const std::vector<AnimKeyframe>& keyframes = it->second;
             XMFLOAT4X4 xmf4x4SRT;
 
+            if (keyframes.size() == 1) {
+                auto keyframe = keyframes[0];
+                XMVECTOR S = XMLoadFloat3(&keyframe.xmf3ScaleKey);
+                XMVECTOR R = XMLoadFloat4(&keyframe.xmf4RotationKey);
+                XMVECTOR T = XMLoadFloat3(&keyframe.xmf3PositionKey);
+
+                XMMATRIX Sm = XMMatrixScalingFromVector(S);
+                XMMATRIX Rm = XMMatrixRotationQuaternion(XMQuaternionNormalize(R));
+                XMMATRIX Tm = XMMatrixTranslationFromVector(T);
+
+                XMMATRIX xmmtxSRT;
+
+                if (bSRTOrder) {
+                    xmmtxSRT = XMMatrixMultiply(Sm, XMMatrixMultiply(Rm, Tm));
+                }
+                else {
+                    xmmtxSRT = XMMatrixMultiply(Tm, XMMatrixMultiply(Rm, Sm));
+                }
+
+                XMStoreFloat4x4(&xmf4x4SRT, xmmtxSRT);
+                return xmf4x4SRT;
+            }
+
             for (int i = 0; i < keyframes.size() - 1; ++i) {
                 if ((fTime >= keyframes[i].fTime) && (fTime <= keyframes[i + 1].fTime)) {
                     float fInterval = keyframes[i + 1].fTime - keyframes[i].fTime;
@@ -110,6 +133,41 @@ public:
                     return xmf4x4SRT;
                 }
             }
+
+            if ((fTime >= keyframes.back().fTime)) {
+                float fInterval = keyframes.front().fTime - keyframes.back().fTime;
+                float t = (fTime - keyframes.back().fTime) / fInterval;
+                XMVECTOR S0 = XMLoadFloat3(&keyframes.back().xmf3ScaleKey);
+                XMVECTOR S1 = XMLoadFloat3(&keyframes.front().xmf3ScaleKey);
+                XMVECTOR R0 = XMLoadFloat4(&keyframes.back().xmf4RotationKey);
+                XMVECTOR R1 = XMLoadFloat4(&keyframes.front().xmf4RotationKey);
+                XMVECTOR T0 = XMLoadFloat3(&keyframes.back().xmf3PositionKey);
+                XMVECTOR T1 = XMLoadFloat3(&keyframes.front().xmf3PositionKey);
+
+                XMVECTOR S = XMVectorLerp(S0, S1, t);
+                XMVECTOR R = XMQuaternionSlerp(R0, R1, t);
+                XMVECTOR T = XMVectorLerp(T0, T1, t);
+                //XMMATRIX xmmtxSRT = XMMatrixAffineTransformation(S, XMVectorSet(0.f, 0.f, 0.f, 1.f), R, T)
+
+                XMMATRIX Sm = XMMatrixScalingFromVector(S);
+                XMMATRIX Rm = XMMatrixRotationQuaternion(XMQuaternionNormalize(R));
+                XMMATRIX Tm = XMMatrixTranslationFromVector(T);
+
+                XMMATRIX xmmtxSRT;
+
+                if (bSRTOrder) {
+                    xmmtxSRT = XMMatrixMultiply(Sm, XMMatrixMultiply(Rm, Tm));
+                }
+                else {
+                    xmmtxSRT = XMMatrixMultiply(Tm, XMMatrixMultiply(Rm, Sm));
+                }
+
+
+                XMStoreFloat4x4(&xmf4x4SRT, xmmtxSRT);
+                return xmf4x4SRT;
+
+            }
+
 
             XMStoreFloat4x4(&xmf4x4SRT, XMMatrixIdentity());
             return xmf4x4SRT;
