@@ -19,6 +19,7 @@
 
 // STL Essentials
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <array>

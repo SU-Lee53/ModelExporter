@@ -17,16 +17,23 @@
 //
 // ============================================================================================
 
+enum OBJECT_IMPORT_OPTION : uint8_t {
+	OBJECT_IMPORT_OPTION_NONE = 0,
+	OBJECT_IMPORT_OPTION_MESH_MATERIAL = 1,
+	OBJECT_IMPORT_OPTION_ANIMATION = OBJECT_IMPORT_OPTION_MESH_MATERIAL << 1,
+
+	OBJECT_IMPORT_OPTION_ALL = OBJECT_IMPORT_OPTION_MESH_MATERIAL | OBJECT_IMPORT_OPTION_ANIMATION
+};
 
 
-struct OBJECT_IMPORT_INFO {
+struct OBJECT_IMPORT_INFO : std::enable_shared_from_this<OBJECT_IMPORT_INFO> {
 	std::string strNodeName;
 
 	std::vector<std::pair<MESH_IMPORT_INFO, MATERIAL_IMPORT_INFO>> MeshMaterialInfoPairs;
 	std::vector<BONE_IMPORT_INFO> boneInfos;
 	std::vector<ANIMATION_IMPORT_INFO> animationInfos;
 
-	XMFLOAT4X4 xmf4x4Bone;
+	XMFLOAT4X4 xmf4x4Transform;
 
 	std::shared_ptr<OBJECT_IMPORT_INFO> pParent;
 	std::vector<std::shared_ptr<OBJECT_IMPORT_INFO>> pChildren;
@@ -35,6 +42,9 @@ struct OBJECT_IMPORT_INFO {
 	static std::map<std::string, BONE_IMPORT_INFO> boneMap;
 	static std::vector<BONE_IMPORT_INFO> boneList;
 
+	void Export(std::string_view strExportName, OBJECT_IMPORT_OPTION optionFlag = OBJECT_IMPORT_OPTION_ALL);
+
+	inline const static std::string strBaseExportPath = "../Exported/";
 };
 
 struct CB_TRANSFORM_DATA {

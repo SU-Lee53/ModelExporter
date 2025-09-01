@@ -38,6 +38,9 @@ struct MESH_IMPORT_INFO {
 
 	std::vector<XMINT4>			blendIndices;
 	std::vector<XMFLOAT4>		blendWeights;
+
+	void Export(std::ofstream& os) const;
+
 };
 
 class Mesh {

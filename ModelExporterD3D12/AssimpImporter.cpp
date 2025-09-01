@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include "AssimpImporter.h"
-#include "BindPoseSanity.h"
 #include <sstream>
 
 using namespace std;
@@ -110,14 +109,30 @@ void AssimpImporter::Run()
 				}
 				ImGui::EndTabItem();
 			}
+
+			if (ImGui::BeginTabItem("Export")) {
+				if (m_pLoadedObject) {
+					ImGui::InputText("Export Name Path", &m_strExportName);
+					if (ImGui::Button("Export")) {
+						if (m_strExportName.length() == 0) {
+							m_strError = "NO EXPORT NAME";
+						}
+						else {
+							m_pRootInfo->Export(m_strExportName);
+						}
+					}
+				}
+				else {
+					ImGui::Text("Model Not Loaded");
+				}
+				ImGui::EndTabItem();
+			}
 		}
 
 		ImGui::EndTabBar();
 	}
 
 	ImGui::End();
-
-	::DrawDebugUI();
 
 	m_pCamera->Update();
 }
@@ -218,12 +233,12 @@ bool AssimpImporter::LoadModel(std::string_view svPath)
 	// 3) Animation 로드(30fps 샘플링) → 루트에만 채워 둠
 	root->animationInfos = LoadAnimationData(m_rpScene, 30.0f);
 
+	m_pRootInfo = root;
+
 	// Init Model
 	ResetCommandList();
 	m_pLoadedObject = GameObject::LoadFromImporter(m_pd3dDevice, m_pd3dCommandList, root, nullptr);
 	ExcuteCommandList();
-
-	::AfterSceneLoaded(m_rpScene);
 
 	return true;
 }
@@ -328,7 +343,7 @@ std::shared_ptr<OBJECT_IMPORT_INFO> AssimpImporter::BuildObjectHierarchy(const a
 	obj->strNodeName = node->mName.C_Str();
 
 	// aiNode::mTransformation (로컬) → row-major
-	obj->xmf4x4Bone = ::aiMatrixToXMFLOAT4X4(node->mTransformation);
+	obj->xmf4x4Transform = ::aiMatrixToXMFLOAT4X4(node->mTransformation);
 
 	// 이 노드가 보유한 Mesh들
 	for (unsigned mi = 0; mi < node->mNumMeshes; ++mi)

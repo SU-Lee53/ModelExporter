@@ -42,6 +42,8 @@ struct ANIMATION_IMPORT_INFO {
 	float fFrameRate = 0.f;
 
 	std::vector<AnimChannel> animationDatas;
+
+    void Export(std::optional<std::ofstream> os);
 };
 
 struct CB_ANIMATION_CONTROL_DATA {

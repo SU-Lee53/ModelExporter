@@ -25,6 +25,8 @@ struct MATERIAL_IMPORT_INFO {
 	std::string		strDetailAlbedoMapName;
 	std::string		strDetailNormalMapName;
 
+	void Export(std::ofstream& os) const;
+
 };
 
 enum MATERAIAL_TEXTURE_TYPE : uint8_t {
@@ -50,6 +52,7 @@ struct CB_MATERIAL_DATA {
 	float			fSpecularHighlight;		// c4.z
 	float			fMetallic;				// c4.w
 	float			fGlossyReflection;		// c5.x
+
 };
 
 class Material {

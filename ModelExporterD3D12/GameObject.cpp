@@ -1,6 +1,72 @@
 #include "stdafx.h"
 #include "GameObject.h"
 
+
+// Export 는 오직 Root 에서만 가능함 -> Root가 모든 정보를 들고있으니까
+void OBJECT_IMPORT_INFO::Export(std::string_view strExportName, OBJECT_IMPORT_OPTION eOptionFlag)
+{
+	namespace fs = std::filesystem;
+	using namespace std::string_literals;
+
+	assert(eOptionFlag != OBJECT_IMPORT_OPTION_NONE);
+
+	// 1. DFS로 순회하며 vector 로 직렬화
+	std::vector<OBJECT_IMPORT_INFO> infos;
+
+	std::function<void(std::shared_ptr<OBJECT_IMPORT_INFO> pNode, std::vector<OBJECT_IMPORT_INFO>& infos)> dfs = 
+		[&](std::shared_ptr<OBJECT_IMPORT_INFO> pNode, std::vector<OBJECT_IMPORT_INFO>& infos) {
+		infos.push_back(*pNode);
+
+		for (auto& pChildren : pNode->pChildren) {
+			dfs(pChildren, infos);
+		}
+	};
+
+	dfs(shared_from_this(), infos);
+
+	__debugbreak();
+
+	// 2. 저장할 폴더 만들기
+	std::string strSavePathDirectoryName = std::format("{}/{}", strBaseExportPath, strExportName);
+	fs::path savePath{ strSavePathDirectoryName };
+	if (!fs::exists(savePath)) {
+		fs::create_directories(strSavePathDirectoryName);
+	}
+
+
+	// 3. 저장 - Mesh + Material
+	// 모델의 기본 단위 -> 한번에 저장
+	if (eOptionFlag & OBJECT_IMPORT_OPTION_MESH_MATERIAL) {
+		std::string strPath = std::format("{}/{}.MESH", strBaseExportPath, strExportName);
+		std::ofstream out(strPath, std::ios::binary);
+
+		std::string strName = std::format("<ObjectName>: {}", strExportName);
+		out.write(strName.data(), strName.length());
+
+		out.write("<Hierarchy>:", "<Hierarchy>:"s.length());
+
+		for (const auto& meshMaterials : infos | std::views::transform([](OBJECT_IMPORT_INFO info) { return info.MeshMaterialInfoPairs; })) {
+			out.write("<Node>", "<Node>"s.length());
+
+			for (const auto& [meshInfo, materialInfo] : meshMaterials) {
+
+
+
+			}
+			
+			out.write("</Node>", "<Node>"s.length());
+		}
+
+
+	}
+
+
+}
+
+////////////////
+// GameObject //
+////////////////
+
 std::map<std::string, BONE_IMPORT_INFO> OBJECT_IMPORT_INFO::boneMap{};
 std::vector<BONE_IMPORT_INFO> OBJECT_IMPORT_INFO::boneList{};
 
@@ -48,7 +114,7 @@ std::shared_ptr<GameObject> GameObject::LoadFromImporter(ComPtr<ID3D12Device14> 
 	}
 
 	pObj->m_strName = pInfo->strNodeName;
-	pObj->m_xmf4x4Transform = pInfo->xmf4x4Bone;
+	pObj->m_xmf4x4Transform = pInfo->xmf4x4Transform;
 	pObj->m_pParent = m_pParent;
 
 	// TODO : BONE

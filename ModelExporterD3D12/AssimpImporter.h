@@ -100,8 +100,11 @@ private:
 
 	std::string m_strError;
 
+	std::string m_strExportName;
+
 private:
 	std::shared_ptr<GameObject> m_pLoadedObject = nullptr;
+	std::shared_ptr<OBJECT_IMPORT_INFO> m_pRootInfo = nullptr;
 
 private:
 	ComPtr<ID3D12Device14>				m_pd3dDevice = nullptr;		// Reference to D3DCore::m_pd3dDevice
@@ -121,5 +124,6 @@ private:
 
 public:
 	std::shared_ptr<Camera> GetCamera() { return m_pCamera; }
+
 
 };
