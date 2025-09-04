@@ -103,8 +103,8 @@ std::shared_ptr<Mesh> Mesh::LoadFromInfo(ComPtr<ID3D12Device14> pd3dDevice, ComP
 		v.xmf3Normal	= info.xmf3Normals[idx];
 		v.xmf3Tangent	= info.xmf3Tangents[idx];
 		v.xmf3BiTangent = info.xmf3BiTangents[idx];
-		v.blendIndices = info.blendIndices[idx];
-		v.blendWeights = info.blendWeights[idx];
+		v.xmi4BlendIndices = info.xmi4BlendIndices[idx];
+		v.xmf4BlendWeights = info.xmf4BlendWeights[idx];
 
 		for (int i = 0; i < info.xmf4Colors.size(); ++i) {
 			//v.xmf4Color[i] = info.xmf4Colors[i][idx];

@@ -27,3 +27,9 @@ inline XMFLOAT4X4 aiMatrixToXMFLOAT4X4(aiMatrix4x4 m) {
     );
 }
 
+template <typename T, int nArraySize = sizeof(T) / sizeof(float)>
+inline std::array<float, nArraySize> XMTypeToArray(T xmData) {
+    std::array<float, nArraySize> ret;
+    std::memcpy(ret.data(), &xmData, sizeof(T));
+    return ret;
+}

@@ -94,12 +94,12 @@ private:
 
 private:
 	std::string m_strCurrentPath;
+	std::string m_strCurrentModelFilename;
 	std::vector<std::string> m_strFBXFilesFromPath;
 	UINT m_ItemSelected = 0;
 	UINT m_ItemHighlighted = 0;
 
 	std::string m_strError;
-
 	std::string m_strExportName;
 
 private:

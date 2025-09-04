@@ -88,6 +88,11 @@ using namespace Microsoft::WRL;
 #include <assimp/importerdesc.h>
 #include <assimp/pbrmaterial.h>
 
+// Json
+
+#include <nlohmann_json/json.hpp>
+#include <nlohmann_json/json_fwd.hpp>
+using namespace nlohmann;
 
 // lib link
 #if defined(_DEBUG)

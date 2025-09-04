@@ -1,16 +1,17 @@
 #include "stdafx.h"
 #include "GameObject.h"
 
-
+// 저장은 Json으로
 // Export 는 오직 Root 에서만 가능함 -> Root가 모든 정보를 들고있으니까
 void OBJECT_IMPORT_INFO::Export(std::string_view strExportName, OBJECT_IMPORT_OPTION eOptionFlag)
 {
 	namespace fs = std::filesystem;
 	using namespace std::string_literals;
 
+
 	assert(eOptionFlag != OBJECT_IMPORT_OPTION_NONE);
 
-	// 1. DFS로 순회하며 vector 로 직렬화
+	// 1. DFS로 순회하며 노드를 vector 로 직렬화 평탄화?
 	std::vector<OBJECT_IMPORT_INFO> infos;
 
 	std::function<void(std::shared_ptr<OBJECT_IMPORT_INFO> pNode, std::vector<OBJECT_IMPORT_INFO>& infos)> dfs = 
@@ -24,7 +25,7 @@ void OBJECT_IMPORT_INFO::Export(std::string_view strExportName, OBJECT_IMPORT_OP
 
 	dfs(shared_from_this(), infos);
 
-	__debugbreak();
+	//__debugbreak();
 
 	// 2. 저장할 폴더 만들기
 	std::string strSavePathDirectoryName = std::format("{}/{}", strBaseExportPath, strExportName);
@@ -35,29 +36,36 @@ void OBJECT_IMPORT_INFO::Export(std::string_view strExportName, OBJECT_IMPORT_OP
 
 
 	// 3. 저장 - Mesh + Material
-	// 모델의 기본 단위 -> 한번에 저장
+	// 노드의 기본 단위 -> 한번에 저장
 	if (eOptionFlag & OBJECT_IMPORT_OPTION_MESH_MATERIAL) {
-		std::string strPath = std::format("{}/{}.MESH", strBaseExportPath, strExportName);
+		std::string strPath = std::format("{}/{}.object", strSavePathDirectoryName, strExportName);
 		std::ofstream out(strPath, std::ios::binary);
 
-		std::string strName = std::format("<ObjectName>: {}", strExportName);
-		out.write(strName.data(), strName.length());
+		json j;
+		j["Name"] = strExportName;
+		j["Nodes"] = json::array();
 
-		out.write("<Hierarchy>:", "<Hierarchy>:"s.length());
+		for (const auto& info : infos) {
+			json node;
 
-		for (const auto& meshMaterials : infos | std::views::transform([](OBJECT_IMPORT_INFO info) { return info.MeshMaterialInfoPairs; })) {
-			out.write("<Node>", "<Node>"s.length());
+			node["Name"] = info.strNodeName;
+			node["Transform"] = XMTypeToArray(info.xmf4x4Transform);
 
-			for (const auto& [meshInfo, materialInfo] : meshMaterials) {
-
-
-
+			for (const auto& [meshInfo, materialInfo] : info.MeshMaterialInfoPairs) {
+				meshInfo.Export(node["Mesh"]);
+				materialInfo.Export(node["Material"]);
 			}
-			
-			out.write("</Node>", "<Node>"s.length());
+
+			j["Nodes"].push_back(node);
 		}
 
+		out << j.dump(4);
 
+		std::vector<uint8_t> binaryJson = json::to_bson(j);
+		std::string strBinaryPath = std::format("{}/{}.bin", strSavePathDirectoryName, strExportName);
+		std::ofstream binaryOut(strBinaryPath, std::ios::binary);
+
+		binaryOut.write((const char*)(binaryJson.data()), binaryJson.size());
 	}
 
 

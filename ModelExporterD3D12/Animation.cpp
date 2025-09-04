@@ -87,71 +87,11 @@ void Animation::allocateCBuffers(ComPtr<ID3D12Device> device)
     }
 }
 
-void Animation::buildLocalMapForFrame(std::unordered_map<std::string, XMMATRIX>& outLocal)
-{
-    outLocal.clear();
-    if (m_Clips.empty()) return;
-    Clip& clip = m_Clips[m_nCurrentAnimationIndex];
-
-    float durationSec = clip.durationTicks / clip.ticksPerSecond;
-    if (m_fTimeElapsed > durationSec) {
-        m_fTimeElapsed = fmodf(m_fTimeElapsed, durationSec);
-    }
-    //unsigned frameIndex = (unsigned)std::min<float>(std::max(0.f, (float)clip.frameCount - 1.f), floorf(m_fTimeElapsed * clip.frameRate));
-
-    for (auto& [name, frames] : clip.channels) {
-        XMFLOAT4X4 xmf4x4SRT = clip.GetSRT(name, m_fTimeElapsed, m_bLocalSRT);
-        outLocal[name] = XMLoadFloat4x4(&xmf4x4SRT); // SRT
-    }
-}
-
-void Animation::buildGlobalByDFS(std::shared_ptr<GameObject> node,
-    const std::unordered_map<std::string, XMMATRIX>& locals,
-    std::unordered_map<std::string, XMMATRIX>& outGlobal,
-    XMMATRIX parentGlobal)
-{
-    const std::string& name = node->GetName();
-
-    XMMATRIX L = XMMatrixIdentity();
-    auto it = locals.find(name);
-    if (it != locals.end()) {
-        L = it->second; // 애니 적용 로컬
-    }
-    else {
-        // 채널 없으면 bind pose 로컬 (aiNode::mTransformation row-major)
-        L = XMLoadFloat4x4(&node->GetLocalTransform());
-    }
-
-    XMMATRIX G{};
-    if (m_bGlobalMulOrder) {
-        G = XMMatrixMultiply(L, parentGlobal); // local * parent
-    }
-    else {
-        G = XMMatrixMultiply(parentGlobal, L); // parent * local
-    }
-
-    outGlobal[name] = G;
-
-    for (auto& ch : node->GetChildren())
-        buildGlobalByDFS(ch, locals, outGlobal, G);
-}
-
-void Animation::BuildGlobalForDebug(std::unordered_map<std::string, DirectX::XMMATRIX>& outGlobal) const
-{
-    outGlobal.clear();
-    if (m_Clips.empty()) return;
-
-    // 1) 채널 보간으로 로컬 SRT(t)
-    std::unordered_map<std::string, XMMATRIX> local;
-    const_cast<Animation*>(this)->buildLocalMapForFrame(local); // 내부 헬퍼 재사용
-
-    // 2) 글로벌 누적: Global = Local * Parent, 루트 시작 = Identity
-    auto owner = m_wpOwner.lock();
-    const_cast<Animation*>(this)->buildGlobalByDFS(owner, local, outGlobal, XMMatrixIdentity());
-}
-
 void Animation::UpdateShaderVariables(ComPtr<ID3D12GraphicsCommandList> cmd)
 {
+    // 본 데이터가 없으면 그냥 리턴
+    if (m_bones.size() == 0) return;
+
     if (m_Clips.empty()) return;
 
     if (m_bPlay) m_fTimeElapsed += DELTA_TIME;

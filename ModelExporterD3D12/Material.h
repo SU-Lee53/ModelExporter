@@ -25,7 +25,9 @@ struct MATERIAL_IMPORT_INFO {
 	std::string		strDetailAlbedoMapName;
 	std::string		strDetailNormalMapName;
 
-	void Export(std::ofstream& os) const;
+	void Export(json& j) const {
+
+	}
 
 };
 

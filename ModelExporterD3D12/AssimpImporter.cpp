@@ -74,6 +74,9 @@ void AssimpImporter::Run()
 	if (ImGui::Button("Load Model")) {
 		std::string strModelPath = std::format("{}/{}", m_strCurrentPath, m_strFBXFilesFromPath[m_ItemSelected]);
 		m_bLoaded = LoadModel(strModelPath);
+
+		fs::path p(strModelPath);
+		m_strCurrentModelFilename = p.stem().string();
 	}
 
 	ImGui::NewLine();
@@ -113,9 +116,17 @@ void AssimpImporter::Run()
 			if (ImGui::BeginTabItem("Export")) {
 				if (m_pLoadedObject) {
 					ImGui::InputText("Export Name Path", &m_strExportName);
+					if(ImGui::BeginItemTooltip())
+					{
+						ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+						ImGui::TextUnformatted("Save as a file name when the name space is empty");
+						ImGui::PopTextWrapPos();
+						ImGui::EndTooltip();
+					}
 					if (ImGui::Button("Export")) {
 						if (m_strExportName.length() == 0) {
-							m_strError = "NO EXPORT NAME";
+							fs::path p(m_strPath);
+							m_pRootInfo->Export(m_strCurrentModelFilename);
 						}
 						else {
 							m_pRootInfo->Export(m_strExportName);
@@ -417,8 +428,8 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 	}
 
 	// 3) 스키닝: Mesh-local vertexId → (boneIndex,weight) 목록 꺼내서 Top4/Normalize
-	info.blendIndices.resize(mesh.mNumVertices);
-	info.blendWeights.resize(mesh.mNumVertices, XMFLOAT4(0, 0, 0, 0));
+	info.xmi4BlendIndices.resize(mesh.mNumVertices);
+	info.xmf4BlendWeights.resize(mesh.mNumVertices, XMFLOAT4(0, 0, 0, 0));
 
 	auto& vtxWeights = m_meshVertexWeights[&mesh]; // CollectSkeletonFromScene 에서 채움
 
@@ -426,8 +437,8 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 	{
 		auto it = vtxWeights.find(v);
 		if (it == vtxWeights.end()) {
-			info.blendIndices[v] = XMINT4(0, 0, 0, 0);
-			info.blendWeights[v] = XMFLOAT4(1, 0, 0, 0);
+			info.xmi4BlendIndices[v] = XMINT4(0, 0, 0, 0);
+			info.xmf4BlendWeights[v] = XMFLOAT4(1, 0, 0, 0);
 			continue;
 		}
 
@@ -450,8 +461,8 @@ MESH_IMPORT_INFO AssimpImporter::LoadMeshData(const aiMesh& mesh)
 			for (int i = 0; i < n; ++i) (&w.x)[i] /= sum;
 		}
 
-		info.blendIndices[v] = idx;
-		info.blendWeights[v] = w;
+		info.xmi4BlendIndices[v] = idx;
+		info.xmf4BlendWeights[v] = w;
 	}
 
 	return info;

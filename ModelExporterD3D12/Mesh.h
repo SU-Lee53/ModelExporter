@@ -9,8 +9,8 @@ struct VertexType {
 	XMFLOAT4	xmf4Color[8];
 	XMFLOAT2	xmf2TexCoords[8];
 
-	XMINT4			blendIndices;
-	XMFLOAT4		blendWeights;
+	XMINT4			xmi4BlendIndices;
+	XMFLOAT4		xmf4BlendWeights;
 
 	static D3D12_INPUT_LAYOUT_DESC GetInputLayout() {
 		return {
@@ -36,10 +36,85 @@ struct MESH_IMPORT_INFO {
 	std::array<std::vector<XMFLOAT2>, 8>	xmf2TexCoords;
 
 
-	std::vector<XMINT4>			blendIndices;
-	std::vector<XMFLOAT4>		blendWeights;
+	std::vector<XMINT4>			xmi4BlendIndices;
+	std::vector<XMFLOAT4>		xmf4BlendWeights;
 
-	void Export(std::ofstream& os) const;
+	void Export(json& j) const {
+		j["Name"] = strMeshName;
+
+		// Vertex Data
+		{
+			j["nVertices"] = xmf3Positions.size();
+
+			std::vector<float> fPositions;	fPositions.reserve(xmf3Positions.size() * 3);
+			std::vector<float> fNormals;	fNormals.reserve(xmf3Positions.size() * 3);
+			std::vector<float> fTangents;	fTangents.reserve(xmf3Positions.size() * 3);
+			std::vector<float> fBiTangents; fBiTangents.reserve(xmf3Positions.size() * 3);
+
+			for (int i = 0; i < xmf3Positions.size(); ++i) {
+				fPositions.insert(fPositions.end(), { xmf3Positions[i].x, xmf3Positions[i].y, xmf3Positions[i].z });
+				fNormals.insert(fNormals.end(), { xmf3Normals[i].x, xmf3Normals[i].y, xmf3Normals[i].z });
+				fTangents.insert(fTangents.end(), { xmf3Tangents[i].x, xmf3Tangents[i].y, xmf3Tangents[i].z });
+				fBiTangents.insert(fBiTangents.end(), { xmf3BiTangents[i].x, xmf3BiTangents[i].y, xmf3BiTangents[i].z });
+			}
+
+			j["Position"] = fPositions;
+			j["Normal"] = fNormals;
+			j["Tangent"] = fTangents;
+			j["BiTangent"] = fBiTangents;
+		}
+
+		// Color + Texcoord
+		{
+			for (int i = 0; i < 8; ++i) {
+				std::vector<float> fColors;		fColors.reserve(xmf3Positions.size() * 4);
+
+				if (xmf4Colors[i].size() != 0) {
+					for (int j = 0; j < xmf3Positions.size(); ++j) {
+						fColors.insert(fColors.end(), { xmf4Colors[i][j].x, xmf4Colors[i][j].y, xmf4Colors[i][j].z, xmf4Colors[i][j].w });
+					}
+
+					std::string strColorKey = std::format("Color{}", i);
+					j[strColorKey] = fColors;
+				}
+
+			}
+
+			for (int i = 0; i < 8; ++i) {
+				std::vector<float> fTexCoords;	fTexCoords.reserve(xmf3Positions.size() * 2);
+				if (xmf2TexCoords[i].size() != 0) {
+					for (int j = 0; j < xmf3Positions.size(); ++j) {
+						fTexCoords.insert(fTexCoords.end(), { xmf2TexCoords[i][j].x, xmf2TexCoords[i][j].y });
+					}
+
+					std::string strTexCoordKey = std::format("TexCoord{}", i);
+					j[strTexCoordKey] = fTexCoords;
+				}
+
+			}
+		}
+
+		if(xmi4BlendIndices.size() != 0)
+		{
+			std::vector<int> nBlendIndices;		nBlendIndices.reserve(xmf3Positions.size() * 4);
+			std::vector<float> fBlendWeights;	fBlendWeights.reserve(xmf3Positions.size() * 4);
+
+			for (int i = 0; i < xmf3Positions.size(); ++i) {
+				nBlendIndices.insert(nBlendIndices.end(), { xmi4BlendIndices[i].x, xmi4BlendIndices[i].y, xmi4BlendIndices[i].z });
+				fBlendWeights.insert(fBlendWeights.end(), { xmf4BlendWeights[i].x, xmf4BlendWeights[i].y, xmf4BlendWeights[i].z });
+			}
+
+			j["BlendIndices"] = nBlendIndices;
+			j["BlendWeights"] = fBlendWeights;
+		}
+
+		{
+			// Indices
+			j["nIndices"] = uiIndices.size();
+			j["Indices"] = uiIndices;
+		}
+
+	}
 
 };
 
