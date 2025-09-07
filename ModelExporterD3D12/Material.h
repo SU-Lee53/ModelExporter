@@ -26,6 +26,32 @@ struct MATERIAL_IMPORT_INFO {
 	std::string		strDetailNormalMapName;
 
 	void Export(json& j) const {
+		j["Name"] = strMaterialName;
+
+		{
+			j["AlbedoColor"] = { xmf4AlbedoColor.x, xmf4AlbedoColor.y, xmf4AlbedoColor.z, xmf4AlbedoColor.w };
+			j["SpecularColor"] = { xmf4SpecularColor.x, xmf4SpecularColor.y, xmf4SpecularColor.z, xmf4SpecularColor.w };
+			j["AmbientColor"] = { xmf4AmbientColor.x, xmf4AmbientColor.y, xmf4AmbientColor.z, xmf4AmbientColor.w };
+			j["EmissiveColor"] = { xmf4EmissiveColor.x, xmf4EmissiveColor.y, xmf4EmissiveColor.z, xmf4EmissiveColor.w };
+		}
+
+		{
+			j["Glossiness"] = fGlossiness;
+			j["Smoothness"] = fSmoothness;
+			j["SpecularHighlight"] = fSpecularHighlight;
+			j["Metallic"] = fMetallic;
+			j["GlossyReflection"] = fGlossyReflection;
+		}
+
+		{
+			j["AlbedoMapName"] = strAlbedoMapName;
+			j["SpecularMapName"] = strSpecularMapName;
+			j["MetallicMapName"] = strMetallicMapName;
+			j["NormalMapName"] = strNormalMapName;
+			j["EmissionMapName"] = strEmissionMapName;
+			j["DetailAlbedoMapName"] = strDetailAlbedoMapName;
+			j["DetailNormalMapName"] = strDetailNormalMapName;
+		}
 
 	}
 
